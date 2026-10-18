@@ -1,14 +1,25 @@
 #include "github_log.h"
 
+#ifdef ARDUINO
 #include <LittleFS.h>
+#include <Preferences.h>
 #include <sys/time.h>
 #include <time.h>
-
 #include "config.h"
-#include "github_api.h"
-#include "settings.h"
+#include "ota_github.h"
+#include "wifi_manager.h"
 
 namespace {
+
+Preferences& nvs() {
+  static Preferences p;
+  static bool opened = false;
+  if (!opened) opened = p.begin("log", false);
+  return p;
+}
+uint32_t nvsGet(const char* key, uint32_t def) { return nvs().getUInt(key, def); }
+void nvsPut(const char* key, uint32_t value) { nvs().putUInt(key, value); }
+
 
 const char* kHeader =
     "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event\n";
@@ -78,7 +89,7 @@ bool rotate() {
   LittleFS.mkdir("/log/q");
   if (!LittleFS.rename("/log/cur.csv", name)) return false;
   g_seq++;
-  nvsPutU32("lseq", g_seq);
+  nvsPut("lseq", g_seq);
   strcpy(g_curDate, "00000000");
   return true;
 }
@@ -169,7 +180,7 @@ bool isGood(int rc) { return rc == 200 || rc == 201 || rc == 422; }  // 422: tha
 void logBegin() {
   LittleFS.mkdir("/log");
   LittleFS.mkdir("/log/q");
-  g_seq = nvsGetU32("lseq", 0);
+  g_seq = nvsGet("lseq", 0);
   g_began = true;
   // Anything left in cur.csv is from before a reboot: queue it as it is. A torn last line (power cut
   // mid-write) is dropped at upload time, because only complete lines are ever sent.
@@ -255,9 +266,9 @@ void logService(bool online, bool idle) {
 
   // Resume point for the head file (kept in flash, so a reboot mid-upload continues, not restarts).
   uint32_t off = 0, idx = 0;
-  if (nvsGetU32("lq_seq", 0xFFFFFFFF) == fileSeq) {
-    off = nvsGetU32("lq_off", 0);
-    idx = nvsGetU32("lq_idx", 0);
+  if (nvsGet("lq_seq", 0xFFFFFFFF) == fileSeq) {
+    off = nvsGet("lq_off", 0);
+    idx = nvsGet("lq_idx", 0);
   }
 
   const String full = String("/log/q/") + name;
@@ -267,7 +278,7 @@ void logService(bool online, bool idle) {
   if (off >= fileSize) {  // finished (or empty): drop it
     f.close();
     LittleFS.remove(full);
-    nvsPutU32("lq_seq", 0xFFFFFFFF);
+    nvsPut("lq_seq", 0xFFFFFFFF);
     return;
   }
   f.seek(off);
@@ -295,7 +306,7 @@ void logService(bool online, bool idle) {
   if (consumed == 0) {  // no complete line left: a torn tail from a power cut. Drop the remainder.
     free(buf);
     LittleFS.remove(full);
-    nvsPutU32("lq_seq", 0xFFFFFFFF);
+    nvsPut("lq_seq", 0xFFFFFFFF);
     return;
   }
 
@@ -315,12 +326,12 @@ void logService(bool online, bool idle) {
     g_nextTryMs = 0;
     g_lastUploadMs = millis();
     off += consumed;
-    nvsPutU32("lq_seq", fileSeq);
-    nvsPutU32("lq_off", off);
-    nvsPutU32("lq_idx", idx + 1);
+    nvsPut("lq_seq", fileSeq);
+    nvsPut("lq_off", off);
+    nvsPut("lq_idx", idx + 1);
     if (off >= fileSize) {
       LittleFS.remove(full);
-      nvsPutU32("lq_seq", 0xFFFFFFFF);
+      nvsPut("lq_seq", 0xFFFFFFFF);
     }
     return;
   }
@@ -336,3 +347,4 @@ void logService(bool online, bool idle) {
   g_nextTryMs = millis() + g_backoffMs;
   Serial.printf("[log] upload failed (%d): %s; retry in %lu s\n", rc, g_err, (unsigned long)(g_backoffMs / 1000));
 }
+#endif

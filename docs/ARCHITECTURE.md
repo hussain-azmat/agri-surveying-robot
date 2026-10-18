@@ -23,7 +23,7 @@ If the control task itself hangs, its watchdog resets the chip, and the motor in
 
 `DISARMED` (default at every boot and after every OTA) → `MANUAL` (armed from the page) → `AUTO` (follower running).
 
-All transitions go through `state.cpp` (`stateArm`, `stateDisarm`, `stateStartAuto`) behind one mutex. Entering
+All transitions go through `safety.cpp` (`stateArm`, `stateDisarm`, `stateStartAuto`) behind one mutex. Entering
 `MANUAL`/`AUTO` is refused unless `safetyCanArm` / `safetyCanStartAuto` agree (not tilted, battery ok, GPS fix and a
 valid heading for auto). Only the control task's `safetyEvaluate()` decides, every 10 ms, whether anything may move.
 
@@ -48,7 +48,7 @@ The MPU6050 has no magnetometer. Heading is gyro-integrated yaw; it is **unalign
 straight above 0.5 m/s once, then the GPS course over ground sets it and later courses keep nudging it (so gyro drift
 cannot accumulate). Auto mode refuses to start while unaligned. A lost IMU or an I2C recovery marks it unaligned again.
 
-## Path following (`follow.cpp`)
+## Path following (`path.cpp`)
 
 Waypoint following with a 4 m acceptance radius (the NEO-6M is ~2.5 m). Hardening found by simulation, and pinned by tests:
 * navigation uses the **median of the last 3 fixes**, so one multipath jump moves nothing;

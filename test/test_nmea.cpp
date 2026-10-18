@@ -4,8 +4,7 @@
 #include <string>
 
 #include "mini_test.h"
-#include "nmea.h"
-#include "ubx.h"
+#include "gps.h"
 
 namespace {
 

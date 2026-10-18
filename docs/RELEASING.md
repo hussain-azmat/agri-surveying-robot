@@ -5,7 +5,7 @@ change code → python tools/bump_version.py patch → git commit → git push
                                      │
        GitHub Actions: tests → compile → size check against the OTA slot → write ota/ → commit
                                      │
-       each rover, when STOPPED and online: reads ota/version.txt → newer? → downloads → verifies MD5 → reboots → stays disarmed
+       each rover, at power-up once online, then every 5 min while STOPPED: reads ota/version.txt → newer? → downloads → verifies MD5 → reboots → stays disarmed
 ```
 
 ## Rules the system enforces
@@ -18,6 +18,9 @@ change code → python tools/bump_version.py patch → git commit → git push
   aborts and the running firmware is untouched.
 * **Never while the rover can move.** Checks run at power-up and while disarmed; the flash is re-checked against "still
   disarmed" before the reboot.
+* **Automatic by default, manual on request.** The first check happens as soon as the rover is online with a valid clock after
+  power-up. With `auto_update=on` (default, `config/rover.cfg`) it installs a newer version by itself. With `auto_update=off` it only
+  reports "update available" and waits for you to press **Install update** on the control page. **Check for update** always only looks.
 * **After an update:** the rover reports the new version on the control page and stays **disarmed**. A person arms it.
 * **Fits the slot.** `tools/publish_ota.py` refuses an image bigger than `app0` in `partitions.csv`.
 

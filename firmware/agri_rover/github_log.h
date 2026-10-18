@@ -1,4 +1,8 @@
 #pragma once
+#ifdef ARDUINO
+#include <Arduino.h>
+#include "safety.h"
+
 // Rover log: 5 Hz rows written to flash while armed, uploaded to GitHub in BATCHES when stopped.
 //
 // Rows (CSV): utc, uptime_ms, lat, lon, fix, sats, hdop, speed_mps, course_deg, yaw_deg, mode,
@@ -15,9 +19,7 @@
 //  * If offline, nothing is lost: rows stay in flash and are sent later. If flash is nearly full,
 //    logging stops (and the UI says so) rather than corrupting or silently dropping data.
 //  * Never uploads while the rover can move.
-#include <Arduino.h>
 
-#include "state.h"
 
 struct LogStatus {
   uint32_t pendingBytes;   // in flash, not yet uploaded
@@ -36,3 +38,4 @@ void logEvent(const RoverState& s, const char* event);
 void logFlush();
 void logService(bool online, bool idle);
 LogStatus logStatus();
+#endif

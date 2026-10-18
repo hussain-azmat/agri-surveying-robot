@@ -143,6 +143,31 @@ constexpr uint32_t DEF_UPLOAD_IDLE_S = 20;       // idle this long before upload
 constexpr uint32_t DEF_SYNC_INTERVAL_S = 60;     // config sync while idle (EDD: ~1 min)
 constexpr uint32_t DEF_OTA_INTERVAL_S = 300;     // version check while stopped (EDD: ~5 min)
 
+// ---- Runtime configuration -------------------------------------------------------------------
+// The values the rover can be re-tuned with WITHOUT a rebuild: config/rover.cfg in the repo is fetched
+// about once a minute while the rover is stopped and online, parsed by parseRtConfig() (ota_github.cpp)
+// and clamped to the safe range noted beside each field, so a typo can make the rover less capable but
+// never unsafe. The compile-time defaults above are what you get if the file is absent.
+struct RuntimeConfig {
+  float maxSpeed = DEF_MAX_SPEED;           // 0.1 .. 1.0   manual throttle scale
+  float autoSpeed = DEF_AUTO_SPEED;         // 0.1 .. 0.8
+  float acceptRadiusM = DEF_ACCEPT_RADIUS_M;  // 3 .. 15
+  float offPathM = DEF_OFFPATH_M;           // acceptRadius+2 .. 50
+  uint32_t cmdTimeoutMs = DEF_CMD_TIMEOUT_MS;    // 200 .. 1000
+  uint32_t linkTimeoutMs = DEF_LINK_TIMEOUT_MS;  // 1000 .. 10000
+  float hdopMax = DEF_HDOP_MAX;             // 1 .. 20
+  float battLowV = DEF_BATT_LOW_V;          // 6 .. 30
+  float battCritV = DEF_BATT_CRIT_V;        // 5 .. battLow
+  float pathSpacingM = DEF_PATH_SPACING_M;  // 1 .. 5
+  float pathTurnDeg = DEF_PATH_TURN_DEG;    // 5 .. 45
+  uint32_t uploadIdleS = DEF_UPLOAD_IDLE_S;      // 5 .. 600
+  uint32_t syncIntervalS = DEF_SYNC_INTERVAL_S;  // 30 .. 3600
+  uint32_t otaIntervalS = DEF_OTA_INTERVAL_S;    // 60 .. 86400
+  float turnFullDps = 90.0f;                // 20 .. 360  yaw rate at turn = 1 (calibrate!)
+  bool loggingEnabled = true;
+  bool autoUpdate = true;  // install a newer firmware by itself when the rover is stopped and online
+};
+
 // ---- WiFi -----------------------------------------------------------------------
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;   // brief: 10-15 s, non-blocking
 constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS = 240000;   // brief: 3-5 min then go offline

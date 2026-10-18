@@ -26,8 +26,8 @@ Do the stages in order; each one needs the previous. Record the measurements: th
 - [ ] Enter the right one: "Connected and saved". Reboot: it reconnects by itself.
 - [ ] **Hold the button for 5 s at power-up:** setup mode returns. **Do nothing for 4 minutes in setup:** offline mode; the
       control page still works on the rover's own network.
-- [ ] Add the GitHub token. Push a commit that bumps the version; wait for CI; the rover updates within ~5 minutes (or press
-      *Check for update*), reboots, shows "Updated from vX to vY" and is **disarmed**.
+- [ ] Add the GitHub token. Push a commit that bumps the version; wait for CI; reboot the rover: as soon as it is online it checks and updates by itself (or press
+      *Check for update*, then *Install update*), reboots, shows "Updated from vX to vY" and is **disarmed**.
 - [ ] **Bad download keeps the old firmware:** temporarily publish a `version.txt` with a wrong MD5 on a test branch/copy (or
       power-cycle the rover mid-download). The rover must report the failure and keep running the old version.
 - [ ] Arm the rover and request an update: it must refuse ("disarm first").
@@ -63,7 +63,7 @@ Do the stages in order; each one needs the previous. Record the measurements: th
 - [ ] **Failsafes in auto:** cover the antenna (no fix → stop), push the rover off the path (off-path stop), close the page (link-loss stop).
 - [ ] **Measure:** the log has `xte_m` (cross-track error) and `wp` per row in auto mode. Report max and mean `xte_m`, end-point error, and
       time per lap over at least 5 laps. *(The exact measurements requested in the brief were cut off; confirm which ones are wanted.)*
-- [ ] Tune `accept_radius_m`, `auto_speed`, and (if it wanders) the steering gains in `follow.h` against those numbers.
+- [ ] Tune `accept_radius_m`, `auto_speed`, and (if it wanders) the steering gains in `path.h` against those numbers.
 
 ## Before leaving it unattended
 

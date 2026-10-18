@@ -85,7 +85,7 @@ class PublishOta(unittest.TestCase):
         self.assertFalse((root / "ota").exists())
 
     def test_published_manifest_is_accepted_by_the_firmware_parser_rules(self):
-        # Mirror of fwversion.cpp: version x.y.z, 32 hex md5, size between 64 KB and 16 MB.
+        # Mirror of ota_github.cpp: version x.y.z, 32 hex md5, size between 64 KB and 16 MB.
         root = make_repo()
         publish_ota.run(root, make_bin(root))
         m = publish_ota.read_manifest(root / "ota" / "version.txt")

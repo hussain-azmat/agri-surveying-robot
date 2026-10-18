@@ -55,7 +55,8 @@ input,select{font:inherit;padding:9px;border-radius:8px;border:1px solid var(--l
   <div class="mu">Place the rover at the start of the path first. If heading is not aligned, drive forward about 5 m in manual.</div></section>
 
  <section class="card"><h2>System</h2>
-  <div class="row"><button id="ota">Check for update</button><button id="sync">Sync config</button><button id="cal">Calibrate IMU</button></div>
+  <div class="row"><button id="ota">Check for update</button><button class="p" id="otaInstall" disabled>Install update</button></div>
+  <div class="row"><button id="sync">Sync config</button><button id="cal">Calibrate IMU</button></div>
   <div class="row"><select id="bw"><option value="0">FL</option><option value="1">FR</option><option value="2">RL</option><option value="3">RR</option></select>
    <button id="bench">Spin wheel 1 s (wheels OFF the ground)</button></div>
   <div class="row"><a id="wifi" href="#">Change WiFi / token</a></div>
@@ -87,7 +88,8 @@ function render(s){st=s;armed=s.mode==='MANUAL';
  r.push(['Network',s.net+'  '+s.ip+(s.host?'  ('+s.host+')':'')]);
  r.push(['Clock',s.clock?'set':'not set yet']);
  r.push(['Log',(s.log.bytes/1024).toFixed(1)+' KB pending, '+s.log.files+' queued'+(s.log.tok?'':'  (no GitHub token)')]);
- r.push(['Update',s.ota.msg||s.ota.state]);
+ r.push(['Update',(s.ota.msg||s.ota.state)+(s.ota.auto?'  (installs automatically)':'  (manual install)')]);
+ $('otaInstall').disabled=!(s.ota.avail&&s.mode==='DISARMED');
  if(s.mode==='AUTO'||s.follow.state==='FINISHED')r.push(['Auto',`${s.follow.state}  wp ${s.follow.wp}/${s.follow.n}  XTE ${s.follow.xte} m`]);
  if(s.mode==='DISARMED'&&s.reason)r.push(['Last stop',s.reason]);
  put($('stat'),r);
@@ -129,6 +131,7 @@ $('recStop').onclick=async()=>{const r=await api('rec/stop',{name:$('pname').val
 $('pload').onclick=async()=>{say('loading...','wa');const r=await api('path/load',{name:$('plist').value});say(r.msg,r.ok?'ok':'er')};
 $('auto').onclick=async()=>{if(!confirm('Start auto mode? Keep clear of the rover. The STOP button always works.'))return;const r=await api('auto/start');say(r.msg,r.ok?'ok':'er')};
 $('ota').onclick=async()=>{say('checking...','wa');const r=await api('ota/check');say(r.msg,r.ok?'ok':'er')};
+$('otaInstall').onclick=async()=>{if(!confirm('Install the update now? The rover restarts and stays disarmed.'))return;say('installing...','wa');const r=await api('ota/install');say(r.msg,r.ok?'ok':'er')};
 $('sync').onclick=async()=>{const r=await api('config/sync');say(r.msg,r.ok?'ok':'er')};
 $('cal').onclick=async()=>{const r=await api('imu/calibrate');say(r.msg,r.ok?'ok':'er')};
 $('bench').onclick=async()=>{const r=await api('bench',{w:$('bw').value,v:'0.3'});say(r.msg,r.ok?'ok':'er')};

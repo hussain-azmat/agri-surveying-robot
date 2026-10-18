@@ -1,14 +1,107 @@
 #include "wifi_manager.h"
 
+#include <stdint.h>
+#include <string.h>
+
+namespace {
+uint32_t fnv1a(const char* s, uint32_t seed) {
+  uint32_t h = seed;
+  for (; *s; s++) {
+    h ^= (uint8_t)*s;
+    h *= 16777619u;
+  }
+  return h;
+}
+}  // namespace
+
+void deriveAccessCode(const char* salt, const char* macHex12, char* out) {
+  // Unambiguous alphabet (no 0/o, 1/l/i) so it can be read off a sticker without mistakes.
+  static const char alphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";
+  char seed[96];
+  strncpy(seed, salt, sizeof(seed) - 16);
+  seed[sizeof(seed) - 16] = '\0';
+  strcat(seed, ":");
+  strncat(seed, macHex12, 12);
+  const uint32_t a = fnv1a(seed, 2166136261u);
+  const uint32_t b = fnv1a(seed, 0x9E3779B1u);
+  for (int i = 0; i < 10; i++) {
+    const uint32_t v = i < 5 ? a : b;
+    out[i] = alphabet[(v >> ((i % 5) * 6)) % 31];
+  }
+  out[10] = '\0';
+}
+
+#ifdef ARDUINO
 #include <DNSServer.h>
 #include <ESPmDNS.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <time.h>
-
 #include "config.h"
+#include "ota_github.h"
 #include "remote.h"
-#include "settings.h"
 #include "ui.h"
+
+namespace {
+Preferences& nvs() {
+  static Preferences p;
+  static bool opened = false;
+  if (!opened) opened = p.begin("wifi", false);
+  return p;
+}
+
+String macHex() {
+  uint8_t m[6];
+  WiFi.macAddress(m);  // reads the factory MAC, works before WiFi.begin()
+  char b[13];
+  snprintf(b, sizeof(b), "%02X%02X%02X%02X%02X%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
+  return String(b);
+}
+
+String derivedCode() {
+  char out[11];
+  deriveAccessCode(AP_PASSWORD_SALT, macHex().c_str(), out);  // pure function, unit-tested; mirrored by tools/ap_password.py
+  return String(out);
+}
+}  // namespace
+
+String roverId() { return "rover-" + macHex().substring(6); }
+String roverMac() {
+  const String h = macHex();
+  String out;
+  for (int i = 0; i < 12; i += 2) {
+    if (i) out += ':';
+    out += h.substring(i, i + 2);
+  }
+  return out;
+}
+String apSsid() { return "RoverSetup-" + macHex().substring(8); }
+
+bool accessCodeIsCustom() { return nvs().getString("acode", "").length() >= 8; }
+String accessCode() {
+  const String custom = nvs().getString("acode", "");
+  return custom.length() >= 8 ? custom : derivedCode();
+}
+void accessCodeSave(const String& code) {
+  if (code.length() == 0) {
+    nvs().remove("acode");
+    return;
+  }
+  if (code.length() < 8 || code.length() > 32) return;
+  nvs().putString("acode", code);
+}
+
+bool wifiCredsPresent() { return nvs().getString("wssid", "").length() > 0; }
+String wifiSsid() { return nvs().getString("wssid", ""); }
+String wifiPass() { return nvs().getString("wpass", ""); }
+void wifiCredsSave(const String& ssid, const String& pass) {
+  nvs().putString("wssid", ssid);
+  nvs().putString("wpass", pass);
+}
+void wifiCredsClear() {
+  nvs().remove("wssid");
+  nvs().remove("wpass");
+}
 
 namespace {
 
@@ -54,7 +147,7 @@ String jsonEscape(const String& s) {
 void startAp(bool captive) {
   if (!g_apOn) {
     WiFi.mode(WIFI_AP_STA);
-    // The password protects the rover's own network; see settings.h for how the access code works.
+    // The password protects the rover's own network; see the access-code notes in wifi_manager.h.
     WiFi.softAP(apSsid().c_str(), accessCode().c_str());
     g_apOn = true;
   }
@@ -347,3 +440,4 @@ void wifiRegisterRoutes(WebServer& server) {
     s->on(path, HTTP_ANY, probe);
   }
 }
+#endif

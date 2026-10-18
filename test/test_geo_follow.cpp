@@ -3,8 +3,7 @@
 
 #include <vector>
 
-#include "follow.h"
-#include "geo.h"
+#include "path.h"
 #include "mini_test.h"
 
 namespace {
@@ -429,7 +428,7 @@ TEST(follow_no_fix_grace_then_fault) {
     FollowCmd c = x.step({0, 0}, false, false, 0);
     CHECK(c.throttle == 0.0f);
   }
-  CHECK(x.f.state() == FollowState::FAULT_NOFIX == false);  // still running
+  CHECK(x.f.state() != FollowState::FAULT_NOFIX);  // still running
   x.step({0, 0}, true, true, 0);                            // the fix returns: the timer resets
   for (int i = 0; i < 20; i++) x.step({0, 0}, false, false, 0);
   CHECK(x.f.state() == FollowState::RUNNING);

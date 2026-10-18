@@ -7,7 +7,7 @@
 //   wifi_manager    saved network + setup page   ota_github  version check, download, flash
 //   github_log      5 Hz log, batched upload     path        record, thin, save, load, follow
 //   remote + ui.h   web server and pages         safety      failsafes (pure, unit-tested)
-//   control         100 Hz real-time task        settings    flash-only credentials and config
+//   (safety also runs the 100 Hz real-time control task and holds the shared rover state)
 //
 // Threads: the 100 Hz control task (core 1) owns sensors, failsafes and motors and never touches
 // flash or the network. This loop() owns WiFi, the web server, flash and GitHub. A slow upload or
@@ -16,7 +16,6 @@
 #include <LittleFS.h>
 
 #include "config.h"
-#include "control.h"
 #include "github_log.h"
 #include "gps.h"
 #include "imu.h"
@@ -24,8 +23,7 @@
 #include "ota_github.h"
 #include "path.h"
 #include "remote.h"
-#include "settings.h"
-#include "state.h"
+#include "safety.h"
 #include "wifi_manager.h"
 
 static Mode g_prevMode = Mode::DISARMED;
@@ -47,9 +45,7 @@ void setup() {
   Serial.println("=== agri rover firmware v" FW_VERSION " ===");
 
   stateBegin();
-  settingsBegin();
-  const uint32_t boots = bootCountIncrement();
-  Serial.printf("[boot] #%lu, id %s, MAC %s\n", (unsigned long)boots, roverId().c_str(), roverMac().c_str());
+  Serial.printf("[boot] id %s, MAC %s\n", roverId().c_str(), roverMac().c_str());
 
   if (!LittleFS.begin(true /*format if corrupt*/, "/littlefs", 10, "spiffs")) {
     Serial.println("[fs] flash filesystem unavailable: logging and paths disabled");

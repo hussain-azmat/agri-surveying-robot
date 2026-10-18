@@ -1,8 +1,7 @@
 #include "motors.h"
 
+#ifdef ARDUINO
 #include <math.h>
-
-#include "mixer.h"
 
 #if !defined(ESP_ARDUINO_VERSION_MAJOR) || ESP_ARDUINO_VERSION_MAJOR < 3
 #error "This firmware needs the arduino-esp32 core 3.x (LEDC pin-based API). Tested with 3.1.3."
@@ -120,3 +119,4 @@ bool motorsStopped() {
 void motorsGetApplied(float out[W_COUNT]) {
   for (int w = 0; w < W_COUNT; w++) out[w] = g_applied[w];
 }
+#endif

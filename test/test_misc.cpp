@@ -1,18 +1,17 @@
 #include <math.h>
 #include <string.h>
 
-#include "accesscode.h"
-#include "fwversion.h"
+#include "wifi_manager.h"
+#include "ota_github.h"
 #include "mini_test.h"
-#include "mixer.h"
-#include "rt_config.h"
+#include "motors.h"
 #include "safety.h"
 
 // ------------------------------------------------------- access code ----
 
 TEST(access_code_matches_the_python_sticker_tool) {
   // Golden vector from `python tools/ap_password.py A4:CF:12:34:56:78` with the default salt.
-  // If this fails, tools/ap_password.py and accesscode.cpp have drifted apart: stickers would be wrong.
+  // If this fails, tools/ap_password.py and wifi_manager.cpp have drifted apart: stickers would be wrong.
   char code[11];
   deriveAccessCode("agri-rover-v1", "A4CF12345678", code);
   CHECK(strcmp(code, "ue2u86hjju") == 0);
@@ -99,6 +98,17 @@ TEST(rt_config_defaults_and_overrides) {
   CHECK_NEAR(c.autoSpeed, 0.5, 1e-6);
   CHECK_NEAR(c.maxSpeed, 0.9, 1e-6);
   CHECK(!c.loggingEnabled);
+}
+
+TEST(rt_config_auto_update_switch) {
+  RuntimeConfig c;
+  CHECK(c.autoUpdate);  // on by default: the rover installs a newer firmware by itself
+  parseRtConfig("auto_update=off\n", &c);
+  CHECK(!c.autoUpdate);
+  parseRtConfig("auto_update=on\n", &c);
+  CHECK(c.autoUpdate);
+  RtConfigReport r = parseRtConfig("auto_update=maybe\n", &c);
+  CHECK(r.malformed == 1 && c.autoUpdate);  // junk leaves the value unchanged
 }
 
 TEST(rt_config_clamps_so_a_bad_file_cannot_make_the_rover_unsafe) {

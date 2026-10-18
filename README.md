@@ -17,8 +17,10 @@ Design source: *Agri Surveying Robot, Engineering Design Document V0.5* (hardwar
   when it leaves the path, when it stops making progress, or when the control page goes quiet.
 * **Logging**: 5 Hz rows (time, lat, lon, fix quality, satellites, HDOP, speed, course, yaw, mode, battery,
   cross-track error, waypoint) to flash, uploaded to `logs/` in batches while stopped. Offline-safe.
-* **OTA updates**: bump the version, push, CI builds and publishes `ota/`; every rover updates itself when stopped,
-  verifies the MD5 first, and stays disarmed afterwards.
+* **OTA updates**: bump the version, push, CI builds and publishes `ota/`. **At power-up, as soon as the rover is online,
+  it checks for a newer version and installs it by itself** (then re-checks every 5 minutes while stopped). It verifies the
+  MD5 first and stays disarmed afterwards. The control page also has **Check for update** and **Install update** buttons, and
+  `auto_update=off` in `config/rover.cfg` switches the automatic install off (the button then installs on demand).
 * **WiFi setup page**: no credentials in code. Hold the button 5 s at power-up, or use "Change WiFi".
 
 ## Repository layout
@@ -35,25 +37,28 @@ docs/                  pin map, architecture, bring-up checklist, releasing
 .github/workflows/     build + OTA publish, nightly log merge, weekly TLS-root check
 ```
 
-### Firmware modules
+### Firmware: one sketch, one module per job
 
-| Module | Job |
+Everything is in `firmware/agri_rover/`: **one `.ino`** (setup and loop only), **`config.h`**, **`ui.h`**, and **one
+`.h`/`.cpp` pair per job**. Nothing else to hunt for.
+
+| File | Job |
 |---|---|
 | `agri_rover.ino` | `setup()` and `loop()` only; wires the modules together |
-| `config.h` | pins, limits, version constant. **No secrets.** |
-| `motors` | 4 L298N channels (IN1/IN2 direction, PWM on EN), skid-steer mixing, slew limit, immediate stop. EN forced LOW first thing at boot |
-| `imu` | MPU6050, gyro-bias calibration, tilt, heading (gyro, aligned by GPS course) |
-| `gps` + `nmea` + `ubx` | NEO-6M: auto-baud, 5 Hz, GGA+RMC only; fix quality, satellites, HDOP |
-| `wifi_manager` | saved network, setup page, captive portal, offline mode |
-| `ota_github` | version check (newer only), download, MD5 verify, flash |
-| `github_log` + `github_api` | flash log, batched upload with retry and back-off; shared GitHub client (strict TLS) |
-| `path` + `follow` + `geo` | record, thin, save, load, follow; pure geometry and following math |
-| `remote` + `ui.h` | web server and the control/setup pages (HTML lives in `ui.h`) |
-| `safety` | every failsafe as one pure, unit-tested function |
-| `control` | the 100 Hz real-time task that applies the failsafes and drives the motors |
-| `settings`, `state`, `rt_config`, `fwversion`, `mixer`, `accesscode`, `certs.h` | flash-only credentials, shared state, config parsing, version logic, mixing, access code, GitHub root CAs |
+| `config.h` | pins, limits, the version constant, runtime-config defaults. **No secrets.** |
+| `motors` | 4 independent L298N channels (IN1/IN2 direction, PWM on EN), skid-steer mixing, slew limit, immediate stop |
+| `imu` | MPU6050: bias calibration, tilt, heading (gyro, aligned by the GPS course) |
+| `gps` | NEO-6M at 5 Hz: fix quality, satellites, HDOP (NMEA parser and u-blox setup included) |
+| `wifi_manager` | saved network, setup page, captive portal, offline mode; the rover's identity and access code |
+| `ota_github` | version check, download, MD5 verify and flash; the shared GitHub client; config sync |
+| `github_log` | 5 Hz flash log, batched upload with retry and back-off |
+| `path` | record, thin, save, load and follow (geometry and the path follower included) |
+| `remote` + `ui.h` | web server and the control/setup pages (the HTML lives in `ui.h`) |
+| `safety` | every failsafe as one function, the shared rover state, and the 100 Hz control task that applies them |
+| `certs.h`, `partitions.csv` | GitHub's root certificates (data), and the two-slot OTA flash layout |
 
-Anything marked "pure" has no Arduino dependency and is covered by `test/`.
+Inside each `.h`/`.cpp` the **top half is plain C++ with no Arduino dependency** (the GPS parser, geometry, path follower,
+failsafe rules, version logic...), so it is unit-tested on a laptop; the part under `#ifdef ARDUINO` is what touches the hardware.
 
 ## First-time setup
 
@@ -93,7 +98,7 @@ measurements to take at each stage.
 
 **Verified (on a laptop and in CI):**
 * The firmware compiles for `esp32:esp32:esp32` (core 3.1.3) with no warnings from this code.
-* 72 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
+* 73 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
   geometry, thinning, the path follower in closed-loop simulation (GPS noise up to 2 m, 3% multipath outliers,
   sharp corners, U-turns, closed loops, off-path, stuck, no-fix), every safety rule, OTA version/manifest logic,
   config clamping, motor mixing, and the access-code derivation (matches the sticker tool).

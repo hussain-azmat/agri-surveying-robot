@@ -1,15 +1,14 @@
 #include "remote.h"
 
+#ifdef ARDUINO
 #include <ArduinoJson.h>
 #include <WiFi.h>
-
 #include "config.h"
 #include "github_log.h"
 #include "imu.h"
 #include "ota_github.h"
 #include "path.h"
-#include "settings.h"
-#include "state.h"
+#include "safety.h"
 #include "ui.h"
 #include "wifi_manager.h"
 
@@ -117,6 +116,8 @@ String statusJson() {
   o["msg"] = os.message;
   o["pct"] = os.percent;
   o["remote"] = os.remoteVersion;
+  o["avail"] = os.available;
+  o["auto"] = os.autoUpdate;
 
   String from;
   if (otaJustUpdated(&from)) d["updatedFrom"] = from;
@@ -208,8 +209,17 @@ void registerRoutes() {
     if (!guard()) return;
     if (!isIdle(stateSnapshot())) return reply(false, "disarm first: updates only run while the rover is stopped");
     String msg;
-    otaCheckNow(&msg);  // reboots by itself if it flashes a new image
+    otaCheckNow(&msg, false);  // look only
     reply(true, msg);
+  });
+  server.on("/api/ota/install", HTTP_POST, []() {
+    if (!guard()) return;
+    if (!isIdle(stateSnapshot())) return reply(false, "disarm first: updates only run while the rover is stopped");
+    String msg;
+    otaCheckNow(&msg, false);  // is there anything newer?
+    if (!otaStatus().available) return reply(true, msg);
+    reply(true, "installing: the rover restarts by itself when it is done (about a minute)");  // answer BEFORE flashing
+    otaCheckNow(&msg, true);   // reboots into the new firmware on success
   });
   server.on("/api/config/sync", HTTP_POST, []() {
     if (!guard()) return;
@@ -284,3 +294,4 @@ void remoteBegin() {
 }
 
 void remoteUpdate() { server.handleClient(); }
+#endif

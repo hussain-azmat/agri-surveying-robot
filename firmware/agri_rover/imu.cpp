@@ -1,12 +1,31 @@
 #include "imu.h"
 
+#ifdef ARDUINO
+#include <Preferences.h>
 #include <Wire.h>
 #include <math.h>
 
-#include "geo.h"
-#include "settings.h"
+#include "path.h"
 
 namespace {
+
+// The gyro bias is remembered in flash, so a rover that boots while being moved still has a good value.
+Preferences& nvs() {
+  static Preferences p;
+  static bool opened = false;
+  if (!opened) opened = p.begin("imu", false);
+  return p;
+}
+bool biasLoad(float b[3]) {
+  if (nvs().getBytesLength("bias") != sizeof(float) * 3) return false;
+  nvs().getBytes("bias", b, sizeof(float) * 3);
+  for (int i = 0; i < 3; i++) {
+    if (!isfinite(b[i]) || fabsf(b[i]) > 20.0f) return false;  // implausible: do not trust it
+  }
+  return true;
+}
+void biasSave(const float b[3]) { nvs().putBytes("bias", b, sizeof(float) * 3); }
+
 
 // MPU6050 registers
 constexpr uint8_t REG_SMPLRT_DIV = 0x19, REG_CONFIG = 0x1A, REG_GYRO_CFG = 0x1B, REG_ACCEL_CFG = 0x1C;
@@ -104,7 +123,7 @@ void finishCalibration() {
                     fabsf(mean[2]) < CAL_MAX_GYRO_MEAN && fabsf(accMean - 1.0f) < CAL_MAX_ACCEL_ERR_G;
   if (still && sane) {
     for (int i = 0; i < 3; i++) g_bias[i] = mean[i];
-    imuBiasSave(g_bias);
+    biasSave(g_bias);
     g_imu.calibrated = true;
     Serial.println("[imu] gyro bias calibrated");
   } else {
@@ -119,7 +138,7 @@ bool imuBegin() {
   Wire.setTimeOut(20);  // ms: never let a stuck bus hang the control task
   g_present = configureChip();
   g_imu.ok = g_present;
-  if (imuBiasLoad(g_bias)) g_imu.calibrated = true;  // good enough to drive until a fresh one is taken
+  if (biasLoad(g_bias)) g_imu.calibrated = true;  // good enough to drive until a fresh one is taken
   if (g_present) startCalibration();
   g_lastGoodMs = millis();
   Serial.println(g_present ? "[imu] MPU6050 found" : "[imu] MPU6050 NOT found (check wiring); heading unavailable");
@@ -231,3 +250,4 @@ void imuFeedGpsCourse(float courseDeg, float speedMps) {
   g_yaw = (float)wrap360(g_yaw + k * err);
   g_imu.yawDeg = g_yaw;
 }
+#endif
