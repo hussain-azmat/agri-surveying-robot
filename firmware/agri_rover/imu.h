@@ -12,6 +12,9 @@ struct ImuData {
   float pitchDeg = 0, rollDeg = 0, tiltDeg = 0;
   float gyroNoiseDps = 0;    // short-term gyro noise: watch it rise when the motors run (EDD stage 0)
   uint32_t errors = 0;
+  // Raw sensor readings, no bias removed: what the Adafruit library returned in the original sketch.
+  float accelX = 0, accelY = 0, accelZ = 0;  // m/s^2
+  float gyroX = 0, gyroY = 0, gyroZ = 0;     // rad/s
 };
 
 #ifdef ARDUINO

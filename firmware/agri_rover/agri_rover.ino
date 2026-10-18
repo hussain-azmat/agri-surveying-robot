@@ -41,14 +41,13 @@ void setup() {
 
   Serial.begin(115200);
   delay(50);
-  Serial.println();
-  Serial.println("=== agri rover firmware v" FW_VERSION " ===");
+  serialLog("INFO", "agri rover firmware v" FW_VERSION " starting");
 
   stateBegin();
-  Serial.printf("[boot] id %s, MAC %s\n", roverId().c_str(), roverMac().c_str());
+  serialLog("INFO", "boot: id %s, MAC %s", roverId().c_str(), roverMac().c_str());
 
   if (!LittleFS.begin(true /*format if corrupt*/, "/littlefs", 10, "spiffs")) {
-    Serial.println("[fs] flash filesystem unavailable: logging and paths disabled");
+    serialLog("WARN", "flash filesystem unavailable: logging and paths disabled");
   }
   {
     StateLock l;
@@ -68,9 +67,10 @@ void setup() {
 
   String from;
   if (otaJustUpdated(&from)) {
-    Serial.printf("[ota] now running v%s (updated from v%s). Rover is DISARMED: arm it from the page.\n", FW_VERSION, from.c_str());
+    serialLog("INFO", "now running v%s (updated from v%s). The rover is DISARMED: arm it from the page.", FW_VERSION,
+              from.c_str());
   }
-  Serial.println("[boot] ready, disarmed");
+  serialStatus("READY", "DISARMED", nullptr);
 }
 
 void loop() {
@@ -81,15 +81,17 @@ void loop() {
 
   // Log a row at 5 Hz while armed; record state changes (e.g. a failsafe disarm) as events.
   logTick(s);
+  serialTelemetry(s);  // the {"imu":...} and {"gps":...} lines (the old sketch's serial format)
   if (s.mode != g_prevMode || strcmp(s.stopReason, g_prevReason) != 0) {
     if (s.mode == Mode::DISARMED && g_prevMode != Mode::DISARMED) {
       char ev[40];
       snprintf(ev, sizeof(ev), "DISARM:%s", s.stopReason);
       logEvent(s, ev);
       logFlush();
-      Serial.printf("[safety] disarmed: %s\n", s.stopReason);
+      serialStatus("STOPPED", "DISARMED", s.stopReason);
     } else if (s.mode != g_prevMode) {
       logEvent(s, s.mode == Mode::AUTO ? "ARM:AUTO" : "ARM:MANUAL");
+      serialStatus("RUNNING", s.mode == Mode::AUTO ? "AUTO" : "MANUAL", nullptr);
     }
     g_prevMode = s.mode;
     strncpy(g_prevReason, s.stopReason, sizeof(g_prevReason) - 1);

@@ -346,6 +346,7 @@ FollowStatus PathFollower::status() const {
 #include <LittleFS.h>
 #include <freertos/semphr.h>
 #include <time.h>
+#include "github_log.h"
 #include "ota_github.h"
 #include "safety.h"
 #include "wifi_manager.h"
@@ -749,13 +750,13 @@ void pathService(bool online, bool idle) {
     if (rc == 200 || rc == 201) {
       LittleFS.remove(fp + ".up");
       g_upBackoffMs = 0;
-      Serial.printf("[path] uploaded %s\n", n.c_str());
+      serialLog("INFO", "path %s uploaded", n.c_str());
     } else {
       g_upBackoffMs = g_upBackoffMs ? min<uint32_t>(g_upBackoffMs * 2, 600000) : 15000;
       if (ghRetryAfterS()) g_upBackoffMs = max<uint32_t>(g_upBackoffMs, ghRetryAfterS() * 1000UL);
       g_upNextMs = millis() + g_upBackoffMs;
-      Serial.printf("[path] upload of %s failed (%d): %s; retry in %lu s\n", n.c_str(), rc, ghLastError(),
-                    (unsigned long)(g_upBackoffMs / 1000));
+      serialLog("WARN", "path %s upload failed (%d): %s; retry in %lu s", n.c_str(), rc, ghLastError(),
+                (unsigned long)(g_upBackoffMs / 1000));
     }
     return;  // one upload per call keeps the main loop responsive
   }

@@ -290,7 +290,7 @@ void remoteDenied(WebServer& s) {
 void remoteBegin() {
   registerRoutes();
   server.begin();
-  Serial.println("[web] control page on port 80");
+  serialLog("INFO", "web control page on port 80");
 }
 
 void remoteUpdate() { server.handleClient(); }

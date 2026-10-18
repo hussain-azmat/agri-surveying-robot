@@ -15,7 +15,7 @@
 // Bump this to release. CI (.github/workflows/build-firmware.yml) compiles the
 // sketch and publishes ota/version.txt + ota/firmware.bin when it is NEWER than
 // the version currently in ota/version.txt. Format: MAJOR.MINOR.PATCH
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.2.1"
 
 // ---- GitHub repo used for OTA, config, paths and logs (non-secret) ---------
 // Can be overridden at runtime from the setup page.
@@ -50,8 +50,13 @@ constexpr bool WHEEL_INVERT[W_COUNT] = {false, false, false, false};
 // Per-wheel speed trim (1.0 = nominal). Use to even out motors that differ slightly.
 constexpr float WHEEL_TRIM[W_COUNT] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-constexpr int PIN_I2C_SDA = 21;      // MPU6050 (schematics and block diagram: GPIO21/22)
-constexpr int PIN_I2C_SCL = 22;
+// CONFIRM THE IMU PINS ON THE REAL ROVER. Every schematic and the block diagram put the MPU6050 on I2C GPIO 21 (SDA) and
+// GPIO 22 (SCL), and the Oct-10 sketch used Wire.begin() (those same defaults). If your IMU is wired elsewhere, change
+// the two numbers here: the build re-checks that nothing else uses them. At every boot the rover prints the pins it
+// uses and, if the IMU does not answer, scans the bus (also with SDA/SCL swapped) and says what it found:
+// {"status":"ERROR","message":"..."}. See docs/PINOUT.md, "Confirm the IMU pins".
+constexpr int PIN_I2C_SDA = 21;      // MPU6050 data line
+constexpr int PIN_I2C_SCL = 22;      // MPU6050 clock line
 constexpr int PIN_GPS_RX = 34;       // ESP32 RX  <- GPS TX. GPIO34 is input-only, which is all a receive pin needs
 constexpr int PIN_GPS_TX = 17;       // ESP32 TX  -> GPS RX (used to configure the NEO-6M)
 constexpr int PIN_BATT_ADC = 35;     // ADC1 (input only): battery through a voltage divider
@@ -167,6 +172,16 @@ struct RuntimeConfig {
   bool loggingEnabled = true;
   bool autoUpdate = true;  // install a newer firmware by itself when the rover is stopped and online
 };
+
+// ---- Serial output ----------------------------------------------------------------------------
+// The serial port carries JSON lines only, one object per line, in the style of the original surveying_robot.ino:
+//   {"imu":{"accel_x":..,"accel_y":..,"accel_z":..,"gyro_x":..,"gyro_y":..,"gyro_z":..}}   accel in m/s^2, gyro in rad/s
+//   {"gps":{...}}   {"status":"INFO","message":"..."}   {"status":"RUNNING","state":"MANUAL"}   {"event":"OTA_START"}
+// so a laptop logger that parses the old stream keeps working. Set SERIAL_TELEMETRY to 0 to silence the periodic
+// imu/gps lines (status and event lines are always printed).
+#define SERIAL_TELEMETRY 1
+constexpr uint32_t SERIAL_IMU_PERIOD_MS = 500;   // same rate as the original sketch
+constexpr uint32_t SERIAL_GPS_PERIOD_MS = 1000;
 
 // ---- WiFi -----------------------------------------------------------------------
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;   // brief: 10-15 s, non-blocking

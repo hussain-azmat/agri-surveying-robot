@@ -242,6 +242,7 @@ size_t ubxCfgNmeaRate(uint8_t nmeaId, uint8_t rate, uint8_t* out, size_t cap) {
 #include <HardwareSerial.h>
 #include <sys/time.h>
 #include <time.h>
+#include "github_log.h"
 #include "safety.h"
 
 namespace {
@@ -298,7 +299,7 @@ void gpsBegin() {
   g_baud = GPS_BAUD_TARGET;
   g.baud = g_baud;
   g_baudSwitchMs = g_lastByteMs = millis();
-  Serial.println("[gps] started, listening for NEO-6M");
+  serialLog("INFO", "GPS started on RX=GPIO%d TX=GPIO%d, listening for the NEO-6M", PIN_GPS_RX, PIN_GPS_TX);
 }
 
 uint8_t gpsUpdate() {
@@ -348,7 +349,7 @@ uint8_t gpsUpdate() {
   } else if (g_cfgStage == 2 && now - g_cfgStageMs > 100) {
     sendConfigBurst();
     g_cfgStage = 0;
-    Serial.println("[gps] NEO-6M configured: 38400 baud, 5 Hz, GGA+RMC");
+    serialLog("INFO", "NEO-6M configured: 38400 baud, 5 Hz, GGA+RMC");
   }
   // At the target baud but still hearing 1 Hz or full sentence sets (e.g. module kept 38400 but
   // lost its rate settings after a reset): re-apply the burst once the measured rate is wrong.
@@ -410,6 +411,6 @@ void gpsSyncSystemClock() {
   if (epoch < 1704067200) return;
   struct timeval tv = {epoch, 0};
   settimeofday(&tv, nullptr);
-  Serial.println("[gps] system clock set from GPS");
+  serialLog("INFO", "system clock set from the GPS");
 }
 #endif

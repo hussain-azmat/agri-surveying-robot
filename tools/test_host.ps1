@@ -8,7 +8,7 @@ $fw = Join-Path $root "firmware\agri_rover"
 $out = Join-Path $root "build"
 New-Item -ItemType Directory -Force $out | Out-Null
 
-$sources = @("gps", "path", "safety", "ota_github", "wifi_manager") | ForEach-Object { Join-Path $fw "$_.cpp" }
+$sources = @("gps", "path", "safety", "ota_github", "wifi_manager", "github_log") | ForEach-Object { Join-Path $fw "$_.cpp" }
 $tests = Get-ChildItem (Join-Path $root "test") -Filter "*.cpp" | ForEach-Object { $_.FullName }
 
 & g++ -std=c++17 -O1 -g -Wall -Wextra -Wno-unused-parameter -I $fw -I (Join-Path $root "test") @tests @sources -o (Join-Path $out "host_tests.exe")

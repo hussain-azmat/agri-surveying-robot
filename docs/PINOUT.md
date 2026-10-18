@@ -66,6 +66,23 @@ Antenna placement matters more than anything else for GPS quality: mount it **ou
 **on a metal ground plane if you can**, and keep the cable away from the buck converters and motor leads. Judge it from the control
 page: satellites, HDOP, and "GPS rate" should read about 5.0 Hz.
 
+## Confirm the IMU pins
+
+The IMU's I2C pins are `PIN_I2C_SDA` / `PIN_I2C_SCL` in `config.h` (default **GPIO 21 / 22**: where every schematic puts the MPU6050,
+and what `Wire.begin()` used in your sketch). I could not see the physical wiring, so **please confirm it**. Open the serial monitor
+(115200 baud) and reboot. The rover tells you which pins it uses and whether the IMU answered on them:
+
+| Boot output | Meaning |
+|---|---|
+| `{"status":"INFO","message":"IMU I2C pins: SDA=GPIO21 SCL=GPIO22 ..."}` then `"MPU6050 Initialized Successfully"` | The IMU answers on those pins. Confirmed. |
+| `"MPU6050 not found!..."` then `"no I2C device answers on SDA=GPIO21/SCL=GPIO22: check IMU power, ground, the two wires..."` | Nothing is on those pins: wrong pins, or the IMU is unpowered/unplugged. |
+| `"...answers only with SDA and SCL SWAPPED: swap the two IMU wires..."` | The two wires are reversed. |
+| `"I2C device answers at 0x69 ..."` / `"... is not an MPU6050 at 0x68"` | Something else (or the IMU with AD0 high, address 0x69) is on the bus. |
+
+If the IMU is wired to other pins, change the two numbers in `config.h`; the build refuses to compile if another function (a motor EN,
+for example) uses the same pin. Also confirm with a multimeter that **no motor EN or IN wire shares the IMU's SDA/SCL pin**: the original
+sketch's `BR_EN` on GPIO 21 was exactly that mistake.
+
 ## IMU
 
 MPU6050 mounted flat, chip +X toward the front of the rover, +Z up. If it is mounted differently, change the axis mapping in `imu.cpp`.

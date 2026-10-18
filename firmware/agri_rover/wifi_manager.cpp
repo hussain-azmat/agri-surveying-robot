@@ -38,6 +38,7 @@ void deriveAccessCode(const char* salt, const char* macHex12, char* out) {
 #include <WiFi.h>
 #include <time.h>
 #include "config.h"
+#include "github_log.h"
 #include "ota_github.h"
 #include "remote.h"
 #include "ui.h"
@@ -105,7 +106,7 @@ void wifiCredsClear() {
 
 namespace {
 
-NetState g_state = NetState::BOOT;
+NetState g_net = NetState::BOOT;
 uint32_t g_stateSinceMs = 0;
 DNSServer g_dns;
 bool g_dnsOn = false;
@@ -124,7 +125,7 @@ uint32_t g_testStartMs = 0;
 String g_oldSsid, g_oldPass;
 
 void setState(NetState s) {
-  g_state = s;
+  g_net = s;
   g_stateSinceMs = millis();
 }
 
@@ -185,13 +186,13 @@ void startPortal() {
   g_scanStarted = false;
   g_test = Test::NONE;
   setState(NetState::PORTAL);
-  Serial.println("[wifi] setup mode: join the rover's own network and open any web page");
+  serialLog("INFO", "WiFi setup mode: join the rover's own network and open any web page");
 }
 
 void goOffline() {
   startAp(false);  // keep the rover's network up for phone driving, drop the captive DNS
   setState(NetState::OFFLINE_AP);
-  Serial.println("[wifi] offline mode: driving works, OTA and uploads are off");
+  serialLog("INFO", "WiFi offline mode: driving works, OTA and uploads are off");
 }
 
 void onOnline() {
@@ -204,7 +205,7 @@ void onOnline() {
     g_mdnsOn = true;
   }
   setState(NetState::ONLINE);
-  Serial.println("[wifi] online");
+  serialLog("INFO", "WiFi online");
 }
 
 void startTest(const String& ssid, const String& pass) {
@@ -287,7 +288,7 @@ bool setupButtonHeldAtBoot() {
     digitalWrite(PIN_STATUS_LED, ((millis() - t0) / 150) % 2);
     if (millis() - t0 >= SETUP_BTN_HOLD_MS) {
       digitalWrite(PIN_STATUS_LED, HIGH);
-      Serial.println("[wifi] setup button held: entering WiFi setup");
+      serialLog("INFO", "setup button held: entering WiFi setup");
       return true;
     }
     delay(10);
@@ -310,7 +311,7 @@ void wifiUpdate() {
   if (g_dnsOn) g_dns.processNextRequest();
   serviceTest();
 
-  switch (g_state) {
+  switch (g_net) {
     case NetState::CONNECTING:
       if (WiFi.status() == WL_CONNECTED) onOnline();
       else if (now - g_stateSinceMs > WIFI_CONNECT_TIMEOUT_MS) startPortal();  // wrong password / network gone
@@ -356,15 +357,15 @@ void wifiUpdate() {
       break;
   }
 
-  if (g_state == NetState::ONLINE && g_apCloseAtMs && now > g_apCloseAtMs) {
+  if (g_net == NetState::ONLINE && g_apCloseAtMs && now > g_apCloseAtMs) {
     g_apCloseAtMs = 0;
     stopAp();
   }
 }
 
-NetState wifiState() { return g_state; }
+NetState wifiState() { return g_net; }
 const char* wifiStateName() {
-  switch (g_state) {
+  switch (g_net) {
     case NetState::BOOT: return "BOOT";
     case NetState::CONNECTING: return "CONNECTING";
     case NetState::ONLINE: return "ONLINE";
@@ -385,7 +386,7 @@ void wifiRegisterRoutes(WebServer& server) {
 
   s->on("/setup", HTTP_GET, [s]() {
     if (!remoteAuthorized(*s)) return remoteDenied(*s);
-    if (g_state != NetState::PORTAL) startPortal();  // opening the page puts the rover in setup mode
+    if (g_net != NetState::PORTAL) startPortal();  // opening the page puts the rover in setup mode
     s->send_P(200, "text/html", UI_SETUP_HTML);
   });
 
@@ -432,7 +433,7 @@ void wifiRegisterRoutes(WebServer& server) {
 
   // Captive-portal probes: phones/laptops ask these to decide whether to pop up a sign-in page.
   auto probe = [s]() {
-    if (g_state == NetState::PORTAL) return redirectToSetup(*s);
+    if (g_net == NetState::PORTAL) return redirectToSetup(*s);
     s->send(204, "text/plain", "");
   };
   for (const char* path : {"/generate_204", "/gen_204", "/hotspot-detect.html", "/library/test/success.html",

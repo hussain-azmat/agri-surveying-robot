@@ -1,7 +1,9 @@
 #include <math.h>
+#include <string>
 #include <string.h>
 
 #include "wifi_manager.h"
+#include "github_log.h"
 #include "ota_github.h"
 #include "mini_test.h"
 #include "motors.h"
@@ -412,4 +414,97 @@ TEST(safety_can_arm_and_start_auto_preconditions) {
   lowBatt.battKnown = true;
   lowBatt.battV = 9.7f;
   CHECK(!safetyCanArm(lowBatt, p, &why));
+}
+
+// ------------------------------------------------------- serial JSON ----
+
+namespace {
+// Minimal structural check: one object, braces balanced, every string closed, no raw control characters.
+bool looksLikeJsonObject(const char* s) {
+  const size_t n = strlen(s);
+  if (n < 2 || s[0] != '{' || s[n - 1] != '}') return false;
+  int depth = 0;
+  bool inStr = false;
+  for (size_t i = 0; i < n; i++) {
+    const unsigned char c = (unsigned char)s[i];
+    if (c < 0x20) return false;
+    if (inStr) {
+      if (c == '\\') i++;
+      else if (c == '"') inStr = false;
+    } else if (c == '"') inStr = true;
+    else if (c == '{') depth++;
+    else if (c == '}' && --depth < 0) return false;
+  }
+  return depth == 0 && !inStr;
+}
+}  // namespace
+
+TEST(serial_imu_line_matches_the_original_sketch_format_exactly) {
+  // Same keys, same order, 2 decimals, accel in m/s^2 and gyro in rad/s, as surveying_robot.ino printed.
+  ImuData d;
+  d.accelX = 0.12f; d.accelY = -0.03f; d.accelZ = 9.81f;
+  d.gyroX = 0.0f; d.gyroY = 0.01f; d.gyroZ = -0.02f;
+  char b[200];
+  const size_t n = formatImuJson(b, sizeof(b), d);
+  CHECK(strcmp(b, "{\"imu\":{\"accel_x\":0.12,\"accel_y\":-0.03,\"accel_z\":9.81,"
+                  "\"gyro_x\":0.00,\"gyro_y\":0.01,\"gyro_z\":-0.02}}") == 0);
+  CHECK(n == strlen(b));
+}
+
+TEST(serial_json_never_prints_nan_or_infinity) {
+  ImuData d;
+  d.accelX = NAN; d.gyroZ = INFINITY;
+  char b[200];
+  formatImuJson(b, sizeof(b), d);
+  CHECK(!strstr(b, "nan") && !strstr(b, "inf") && !strstr(b, "NAN"));
+  CHECK(looksLikeJsonObject(b));
+}
+
+TEST(serial_gps_line_with_and_without_a_fix) {
+  GpsData g;
+  char b[300];
+  formatGpsJson(b, sizeof(b), g);
+  CHECK(strstr(b, "\"fix\":false") && !strstr(b, "\"lat\""));  // no position is invented without a fix
+  CHECK(looksLikeJsonObject(b));
+  g.fix = true; g.quality = 1; g.sats = 9; g.hdop = 1.1f; g.lat = 31.5204; g.lon = 74.3587; g.speedMps = 0.12f; g.courseDeg = 84.4f;
+  formatGpsJson(b, sizeof(b), g);
+  CHECK(strstr(b, "\"fix\":true") && strstr(b, "\"lat\":31.5204000") && strstr(b, "\"lon\":74.3587000"));
+  CHECK(looksLikeJsonObject(b));
+}
+
+TEST(serial_status_message_and_event_lines) {
+  char b[300];
+  formatStatusJson(b, sizeof(b), "RUNNING", "MANUAL", nullptr);
+  CHECK(strcmp(b, "{\"status\":\"RUNNING\",\"state\":\"MANUAL\"}") == 0);
+  formatStatusJson(b, sizeof(b), "STOPPED", "DISARMED", "LINK_LOST");
+  CHECK(strcmp(b, "{\"status\":\"STOPPED\",\"state\":\"DISARMED\",\"reason\":\"LINK_LOST\"}") == 0);
+  formatStatusJson(b, sizeof(b), "READY", nullptr, nullptr);
+  CHECK(strcmp(b, "{\"status\":\"READY\"}") == 0);
+  formatMessageJson(b, sizeof(b), "INFO", "MPU6050 Initialized Successfully");  // the original sketch's exact text
+  CHECK(strcmp(b, "{\"status\":\"INFO\",\"message\":\"MPU6050 Initialized Successfully\"}") == 0);
+  formatEventJson(b, sizeof(b), "OTA_START", nullptr);
+  CHECK(strcmp(b, "{\"event\":\"OTA_START\"}") == 0);  // the original sketch's OTA event, byte for byte
+  formatEventJson(b, sizeof(b), "OTA_START", "0.2.1");
+  CHECK(strcmp(b, "{\"event\":\"OTA_START\",\"detail\":\"0.2.1\"}") == 0);
+}
+
+TEST(serial_json_escapes_hostile_text_so_the_line_stays_one_valid_object) {
+  char b[400];
+  formatMessageJson(b, sizeof(b), "INFO", "he said \"stop\"\nand\\then\ttabs \x01 done");
+  CHECK(looksLikeJsonObject(b));
+  CHECK(!strchr(b, '\n'));  // an embedded newline must not split the line
+  char tiny[16];
+  CHECK(jsonEscape("abc\"def\"ghi", tiny, sizeof(tiny)) < sizeof(tiny));  // never overruns
+  CHECK(strlen(tiny) < sizeof(tiny));
+  char one[2];
+  CHECK(jsonEscape("hello", one, sizeof(one)) < sizeof(one));
+  CHECK(jsonEscape(nullptr, one, sizeof(one)) == 0);
+}
+
+TEST(serial_long_text_is_cut_before_formatting_not_in_the_middle_of_the_line) {
+  std::string huge(1000, 'x');
+  huge += "\"";
+  char b[400];
+  formatMessageJson(b, sizeof(b), "ERROR", huge.c_str());
+  CHECK(looksLikeJsonObject(b));
 }

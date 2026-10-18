@@ -289,6 +289,7 @@ RtConfigReport parseRtConfig(const char* text, RuntimeConfig* cfg) {
 #include <mbedtls/base64.h>
 #include <time.h>
 #include "certs.h"
+#include "github_log.h"
 #include "safety.h"
 
 namespace {
@@ -810,7 +811,8 @@ bool checkAndUpdate(String* msg, bool install) {
   }
 
   // ---- A newer version exists: download it into the INACTIVE slot, verifying as we go. ----
-  Serial.printf("[ota] updating v%s -> v%s (%lu bytes)\n", FW_VERSION, m.version, (unsigned long)m.size);
+  serialEvent("OTA_START", m.version);  // same event name the original sketch printed
+  serialLog("INFO", "updating v%s -> v%s (%lu bytes)", FW_VERSION, m.version, (unsigned long)m.size);
   setStatus("downloading", "downloading update...", 0);
   if (!Update.begin(m.size, U_FLASH)) {
     *msg = String("cannot start the update: ") + Update.errorString();
@@ -845,7 +847,8 @@ bool checkAndUpdate(String* msg, bool install) {
   otaMarkUpdated(FW_VERSION);
   *msg = String("updated to v") + m.version + ", restarting";
   setStatus("idle", msg->c_str(), 100);
-  Serial.println("[ota] update verified; restarting into the new firmware (it will stay disarmed)");
+  serialEvent("OTA_DONE", m.version);
+  serialLog("INFO", "update verified; restarting into the new firmware (it will stay disarmed)");
   return true;
 }
 
@@ -886,7 +889,7 @@ void otaService(bool online, bool idle) {
   const bool autoInstall = stateSnapshot().cfg.autoUpdate;
   g_st.autoUpdate = autoInstall;
   const bool flashed = checkAndUpdate(&msg, autoInstall);
-  Serial.printf("[ota] %s\n", msg.c_str());
+  serialLog("INFO", "update check: %s", msg.c_str());
   if (flashed) {
     delay(400);
     ESP.restart();

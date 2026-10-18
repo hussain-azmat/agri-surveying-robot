@@ -5,6 +5,7 @@
 #include <Wire.h>
 #include <math.h>
 
+#include "github_log.h"
 #include "path.h"
 
 namespace {
@@ -125,15 +126,54 @@ void finishCalibration() {
     for (int i = 0; i < 3; i++) g_bias[i] = mean[i];
     biasSave(g_bias);
     g_imu.calibrated = true;
-    Serial.println("[imu] gyro bias calibrated");
+    serialLog("INFO", "gyro bias calibrated");
   } else {
-    Serial.println("[imu] calibration rejected (rover moving?); keeping previous bias");
+    serialLog("WARN", "gyro calibration rejected (rover moving?); keeping the previous bias");
   }
 }
 
 }  // namespace
 
+// Scans one I2C bus and reports every device that answers. Used only to explain a missing IMU.
+int i2cScan(int sda, int scl) {
+  Wire.end();
+  Wire.begin(sda, scl, 100000);
+  Wire.setTimeOut(20);
+  int found = 0;
+  for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      serialLog("INFO", "I2C device answers at 0x%02X with SDA=GPIO%d, SCL=GPIO%d", addr, sda, scl);
+      found++;
+    }
+  }
+  return found;
+}
+
+// Called when the MPU6050 does not answer: finds out WHY, so the pins can be confirmed without a multimeter.
+void diagnoseImuPins() {
+  const int here = i2cScan(PIN_I2C_SDA, PIN_I2C_SCL);
+  if (here > 0) {
+    serialLog("ERROR", "something answers on SDA=GPIO%d/SCL=GPIO%d but it is not an MPU6050 at 0x68 (address 0x69 means AD0 is high)",
+              PIN_I2C_SDA, PIN_I2C_SCL);
+  } else if (i2cScan(PIN_I2C_SCL, PIN_I2C_SDA) > 0) {  // try the two wires the other way round
+    serialLog("ERROR", "the device answers only with SDA and SCL SWAPPED: swap the two IMU wires, or the pin numbers in config.h");
+  } else {
+    serialLog("ERROR", "no I2C device answers on SDA=GPIO%d/SCL=GPIO%d: check IMU power (3.3 V), ground, the two wires, and "
+                       "PIN_I2C_SDA/PIN_I2C_SCL in config.h (is another function using one of these pins?)",
+              PIN_I2C_SDA, PIN_I2C_SCL);
+  }
+  Wire.end();
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, IMU_I2C_HZ);
+  Wire.setTimeOut(20);
+}
+
+// CONFIRM THE IMU PINS: the I2C pins are PIN_I2C_SDA / PIN_I2C_SCL in config.h (default GPIO 21 / 22, which is where every
+// schematic puts the MPU6050 and what Wire.begin() uses by default). The line printed at boot says which pins this
+// firmware is using; the "IMU found" line proves the chip answered on them.
 bool imuBegin() {
+  serialLog("INFO", "IMU I2C pins: SDA=GPIO%d SCL=GPIO%d (confirm against the wiring; see docs/PINOUT.md)", PIN_I2C_SDA,
+            PIN_I2C_SCL);
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, IMU_I2C_HZ);
   Wire.setTimeOut(20);  // ms: never let a stuck bus hang the control task
   g_present = configureChip();
@@ -141,7 +181,12 @@ bool imuBegin() {
   if (biasLoad(g_bias)) g_imu.calibrated = true;  // good enough to drive until a fresh one is taken
   if (g_present) startCalibration();
   g_lastGoodMs = millis();
-  Serial.println(g_present ? "[imu] MPU6050 found" : "[imu] MPU6050 NOT found (check wiring); heading unavailable");
+  if (g_present) {
+    serialLog("INFO", "MPU6050 Initialized Successfully");
+  } else {
+    serialLog("ERROR", "MPU6050 not found! Check wiring. Heading is unavailable.");
+    diagnoseImuPins();
+  }
   return g_present;
 }
 
@@ -166,7 +211,7 @@ void imuUpdate(float dt) {
         g_imu.ok = true;
         g_failStreak = 0;
         g_imu.yawValid = false;  // we were blind for a while: heading must be re-aligned
-        Serial.println("[imu] recovered");
+        serialLog("INFO", "IMU recovered");
       }
     }
     return;
@@ -177,7 +222,7 @@ void imuUpdate(float dt) {
     g_imu.errors++;
     if (++g_failStreak >= 5) {
       g_imu.ok = false;  // the safety layer sees this and stops AUTO driving
-      Serial.println("[imu] lost");
+      serialLog("ERROR", "IMU lost: it stopped answering on the I2C bus");
     }
     return;
   }
@@ -188,6 +233,14 @@ void imuUpdate(float dt) {
   // Chip axes: +X forward, +Y left, +Z up (right-handed). See config.h.
   const float ax = i16(0) / ACCEL_LSB_PER_G, ay = i16(2) / ACCEL_LSB_PER_G, az = i16(4) / ACCEL_LSB_PER_G;
   const float gx = i16(8) / GYRO_LSB_PER_DPS, gy = i16(10) / GYRO_LSB_PER_DPS, gz = i16(12) / GYRO_LSB_PER_DPS;
+
+  // Raw readings for the serial JSON stream (m/s^2 and rad/s, like the Adafruit library the old sketch used).
+  g_imu.accelX = ax * 9.80665f;
+  g_imu.accelY = ay * 9.80665f;
+  g_imu.accelZ = az * 9.80665f;
+  g_imu.gyroX = gx * (float)(M_PI / 180.0);
+  g_imu.gyroY = gy * (float)(M_PI / 180.0);
+  g_imu.gyroZ = gz * (float)(M_PI / 180.0);
 
   if (g_cal) {
     const float g[3] = {gx, gy, gz};
@@ -233,7 +286,7 @@ void imuFeedGpsCourse(float courseDeg, float speedMps) {
     g_yaw = (float)wrap360(courseDeg);
     g_imu.yawDeg = g_yaw;
     g_imu.yawValid = true;
-    Serial.println("[imu] heading aligned to GPS course");
+    serialLog("INFO", "heading aligned to the GPS course");
     return;
   }
   const double err = wrap180(courseDeg - g_yaw);

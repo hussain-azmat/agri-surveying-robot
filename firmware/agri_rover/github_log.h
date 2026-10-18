@@ -1,7 +1,37 @@
 #pragma once
+#include <stddef.h>
+#include <stdint.h>
+
+#include "gps.h"
+#include "imu.h"
+
+// ---- Serial JSON lines (pure formatters: unit-tested on a laptop) ---------------------------------
+// The serial port carries one JSON object per line, in the style of the original surveying_robot.ino, so a laptop
+// logger that parses that stream keeps working. Each formatter writes a NUL-terminated line WITHOUT a newline into
+// `out` and returns its length (never more than cap-1). Text fields are limited BEFORE the line is built, so with a
+// buffer of 400 bytes the line is always complete, valid JSON.
+size_t jsonEscape(const char* in, char* out, size_t cap);  // quotes, backslashes and control characters
+// {"imu":{"accel_x":0.12,"accel_y":-0.03,"accel_z":9.81,"gyro_x":0.00,"gyro_y":0.01,"gyro_z":-0.02}}  (m/s^2, rad/s)
+size_t formatImuJson(char* out, size_t cap, const ImuData& d);
+// {"gps":{"fix":true,"quality":1,"sats":9,"hdop":1.1,"lat":31.5204000,"lon":74.3587000,"speed_mps":0.12,"course_deg":84.4}}
+size_t formatGpsJson(char* out, size_t cap, const GpsData& g);
+// {"status":"RUNNING","state":"MANUAL","reason":""}   (state and reason are optional: pass nullptr)
+size_t formatStatusJson(char* out, size_t cap, const char* status, const char* state, const char* reason);
+// {"status":"INFO","message":"IMU I2C pins: SDA=GPIO21 SCL=GPIO22"}
+size_t formatMessageJson(char* out, size_t cap, const char* status, const char* message);
+// {"event":"OTA_START","detail":"0.2.1"}   (detail optional)
+size_t formatEventJson(char* out, size_t cap, const char* event, const char* detail);
+
 #ifdef ARDUINO
 #include <Arduino.h>
 #include "safety.h"
+
+// ---- Serial output API (any module may call these; each call is ONE write, so lines never interleave) ----
+void serialLog(const char* status, const char* fmt, ...) __attribute__((format(printf, 2, 3)));  // status: INFO/WARN/ERROR
+void serialStatus(const char* status, const char* state, const char* reason);
+void serialEvent(const char* event, const char* detail);
+// Main loop, every iteration: prints the periodic {"imu":...} and {"gps":...} lines (SERIAL_TELEMETRY in config.h).
+void serialTelemetry(const RoverState& s);
 
 // Rover log: 5 Hz rows written to flash while armed, uploaded to GitHub in BATCHES when stopped.
 //

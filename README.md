@@ -80,6 +80,23 @@ failsafe rules, version logic...), so it is unit-tested on a laptop; the part un
 5. Open the control page (`http://rover-xxxxxx.local`, or the IP shown on the setup page; on the rover's own
    network use `192.168.4.1`).
 
+## Serial output (compatible with the original sketch)
+
+The serial port (115200 baud) carries **JSON lines only**, one object per line, so a laptop logger that parses the old
+`surveying_robot.ino` stream keeps working:
+
+```
+{"imu":{"accel_x":0.12,"accel_y":-0.03,"accel_z":9.81,"gyro_x":0.00,"gyro_y":0.01,"gyro_z":-0.02}}   every 500 ms (m/s^2, rad/s: same keys and units as before)
+{"gps":{"fix":true,"quality":1,"sats":9,"hdop":1.1,"lat":31.5204000,"lon":74.3587000,"speed_mps":0.12,"course_deg":84.4}}   every 1 s
+{"status":"INFO","message":"MPU6050 Initialized Successfully"}                                       diagnostics
+{"status":"RUNNING","state":"MANUAL"}   {"status":"STOPPED","state":"DISARMED","reason":"LINK_LOST"}  mode changes
+{"event":"OTA_START","detail":"0.2.1"}   {"event":"OTA_DONE","detail":"0.2.1"}                       updates
+```
+
+It never prints WiFi passwords, the GitHub token or the access code. `SERIAL_TELEMETRY` in `config.h` turns the periodic
+imu/gps lines off. At every boot it also prints the IMU's I2C pins and says whether the IMU answered, which is how you confirm the
+pins ([docs/PINOUT.md](docs/PINOUT.md), "Confirm the IMU pins").
+
 ## The brief, stage by stage
 
 | Stage | Pass criterion | Implemented by | Verified |
@@ -98,7 +115,7 @@ measurements to take at each stage.
 
 **Verified (on a laptop and in CI):**
 * The firmware compiles for `esp32:esp32:esp32` (core 3.1.3) with no warnings from this code.
-* 73 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
+* 79 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
   geometry, thinning, the path follower in closed-loop simulation (GPS noise up to 2 m, 3% multipath outliers,
   sharp corners, U-turns, closed loops, off-path, stuck, no-fix), every safety rule, OTA version/manifest logic,
   config clamping, motor mixing, and the access-code derivation (matches the sticker tool).

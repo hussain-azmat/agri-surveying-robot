@@ -1,5 +1,107 @@
 #include "github_log.h"
 
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+// ================================================================================================
+// Serial JSON formatters (plain C++, no Arduino dependency)
+// ================================================================================================
+namespace {
+double fin(double v) { return isfinite(v) ? v : 0.0; }  // JSON has no NaN/inf
+}  // namespace
+
+size_t jsonEscape(const char* in, char* out, size_t cap) {
+  if (!out || cap == 0) return 0;
+  size_t n = 0;
+  for (; in && *in; in++) {
+    const unsigned char c = (unsigned char)*in;
+    char tmp[8];
+    size_t len;
+    if (c == '"' || c == '\\') {
+      tmp[0] = '\\';
+      tmp[1] = (char)c;
+      len = 2;
+    } else if (c == '\n') {
+      memcpy(tmp, "\\n", 2);
+      len = 2;
+    } else if (c == '\r') {
+      memcpy(tmp, "\\r", 2);
+      len = 2;
+    } else if (c == '\t') {
+      memcpy(tmp, "\\t", 2);
+      len = 2;
+    } else if (c < 0x20) {
+      len = (size_t)snprintf(tmp, sizeof(tmp), "\\u%04x", c);
+    } else {
+      tmp[0] = (char)c;
+      len = 1;
+    }
+    if (n + len >= cap) break;  // never write past the buffer, never cut an escape in half
+    memcpy(out + n, tmp, len);
+    n += len;
+  }
+  out[n] = '\0';
+  return n;
+}
+
+static size_t finish(char* out, size_t cap, int written) {
+  if (written < 0) {
+    if (cap) out[0] = '\0';
+    return 0;
+  }
+  return (size_t)written >= cap ? cap - 1 : (size_t)written;
+}
+
+size_t formatImuJson(char* out, size_t cap, const ImuData& d) {
+  return finish(out, cap,
+                snprintf(out, cap,
+                         "{\"imu\":{\"accel_x\":%.2f,\"accel_y\":%.2f,\"accel_z\":%.2f,"
+                         "\"gyro_x\":%.2f,\"gyro_y\":%.2f,\"gyro_z\":%.2f}}",
+                         fin(d.accelX), fin(d.accelY), fin(d.accelZ), fin(d.gyroX), fin(d.gyroY), fin(d.gyroZ)));
+}
+
+size_t formatGpsJson(char* out, size_t cap, const GpsData& g) {
+  if (g.fix) {
+    return finish(out, cap,
+                  snprintf(out, cap,
+                           "{\"gps\":{\"fix\":true,\"quality\":%u,\"sats\":%u,\"hdop\":%.1f,\"lat\":%.7f,\"lon\":%.7f,"
+                           "\"speed_mps\":%.2f,\"course_deg\":%.1f}}",
+                           (unsigned)g.quality, (unsigned)g.sats, fin(g.hdop), fin(g.lat), fin(g.lon), fin(g.speedMps),
+                           fin(g.courseDeg)));
+  }
+  return finish(out, cap,
+                snprintf(out, cap, "{\"gps\":{\"fix\":false,\"quality\":%u,\"sats\":%u,\"hdop\":%.1f}}",
+                         (unsigned)g.quality, (unsigned)g.sats, fin(g.hdop)));
+}
+
+size_t formatStatusJson(char* out, size_t cap, const char* status, const char* state, const char* reason) {
+  char s[40], st[40], r[60];
+  jsonEscape(status ? status : "", s, sizeof(s));
+  jsonEscape(state ? state : "", st, sizeof(st));
+  jsonEscape(reason ? reason : "", r, sizeof(r));
+  int w = snprintf(out, cap, "{\"status\":\"%s\"", s);
+  if (w > 0 && (size_t)w < cap && state) w += snprintf(out + w, cap - w, ",\"state\":\"%s\"", st);
+  if (w > 0 && (size_t)w < cap && reason) w += snprintf(out + w, cap - w, ",\"reason\":\"%s\"", r);
+  if (w > 0 && (size_t)w < cap) w += snprintf(out + w, cap - w, "}");
+  return finish(out, cap, w);
+}
+
+size_t formatMessageJson(char* out, size_t cap, const char* status, const char* message) {
+  char s[40], m[260];
+  jsonEscape(status ? status : "", s, sizeof(s));
+  jsonEscape(message ? message : "", m, sizeof(m));
+  return finish(out, cap, snprintf(out, cap, "{\"status\":\"%s\",\"message\":\"%s\"}", s, m));
+}
+
+size_t formatEventJson(char* out, size_t cap, const char* event, const char* detail) {
+  char e[60], d[120];
+  jsonEscape(event ? event : "", e, sizeof(e));
+  jsonEscape(detail ? detail : "", d, sizeof(d));
+  if (detail) return finish(out, cap, snprintf(out, cap, "{\"event\":\"%s\",\"detail\":\"%s\"}", e, d));
+  return finish(out, cap, snprintf(out, cap, "{\"event\":\"%s\"}", e));
+}
+
 #ifdef ARDUINO
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -345,6 +447,53 @@ void logService(bool online, bool idle) {
     if (ghRetryAfterS()) g_backoffMs = max<uint32_t>(g_backoffMs, ghRetryAfterS() * 1000UL);
   }
   g_nextTryMs = millis() + g_backoffMs;
-  Serial.printf("[log] upload failed (%d): %s; retry in %lu s\n", rc, g_err, (unsigned long)(g_backoffMs / 1000));
+  serialLog("WARN", "log upload failed (%d): %s; retry in %lu s", rc, g_err, (unsigned long)(g_backoffMs / 1000));
+}
+
+// ================================================================================================
+// Serial output (Arduino)
+// ================================================================================================
+static void emitLine(char* line, size_t len) {
+  if (len + 1 >= 400) len = 398;
+  line[len++] = '\n';
+  Serial.write((const uint8_t*)line, len);  // ONE write per line: the control task and the main loop never interleave
+}
+
+void serialLog(const char* status, const char* fmt, ...) {
+  char msg[260];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(msg, sizeof(msg), fmt, ap);
+  va_end(ap);
+  char line[400];
+  emitLine(line, formatMessageJson(line, sizeof(line) - 1, status, msg));
+}
+
+void serialStatus(const char* status, const char* state, const char* reason) {
+  char line[400];
+  emitLine(line, formatStatusJson(line, sizeof(line) - 1, status, state, reason));
+}
+
+void serialEvent(const char* event, const char* detail) {
+  char line[400];
+  emitLine(line, formatEventJson(line, sizeof(line) - 1, event, detail));
+}
+
+void serialTelemetry(const RoverState& s) {
+#if SERIAL_TELEMETRY
+  static uint32_t lastImu = 0, lastGps = 0;
+  const uint32_t now = millis();
+  char line[400];
+  if (now - lastImu >= SERIAL_IMU_PERIOD_MS) {
+    lastImu = now;
+    if (s.imu.ok) emitLine(line, formatImuJson(line, sizeof(line) - 1, s.imu));
+  }
+  if (now - lastGps >= SERIAL_GPS_PERIOD_MS) {
+    lastGps = now;
+    emitLine(line, formatGpsJson(line, sizeof(line) - 1, s.gps));
+  }
+#else
+  (void)s;
+#endif
 }
 #endif
