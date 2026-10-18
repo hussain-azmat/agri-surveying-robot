@@ -33,13 +33,13 @@ env:
 
 jobs:
   test-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Host unit tests (GPS parser, geometry, path following, safety, OTA logic)
-        run: ./tools/test_host.sh
+        run: bash tools/test_host.sh
 
       - name: Python tool tests (OTA publisher, log consolidation, version bump)
         run: python3 -m unittest tools.test_tools -v
