@@ -15,7 +15,7 @@
 // Bump this to release. CI (.github/workflows/build-firmware.yml) compiles the
 // sketch and publishes ota/version.txt + ota/firmware.bin when it is NEWER than
 // the version currently in ota/version.txt. Format: MAJOR.MINOR.PATCH
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.1.1"
 
 // ---- GitHub repo used for OTA, config, paths and logs (non-secret) ---------
 // Can be overridden at runtime from the setup page.

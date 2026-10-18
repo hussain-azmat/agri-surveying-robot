@@ -129,7 +129,9 @@ void startTest(const String& ssid, const String& pass) {
 void serviceTest() {
   if (g_test != Test::RUNNING) return;
   const wl_status_t st = WiFi.status();
-  if (st == WL_CONNECTED) {
+  // Right after WiFi.begin() the radio may still report "connected" to the OLD network. Only a
+  // connection to the network being tested counts, or we would save credentials that were never proven.
+  if (st == WL_CONNECTED && millis() - g_testStartMs > 500 && WiFi.SSID() == g_testSsid) {
     wifiCredsSave(g_testSsid, g_testPass);
     if (g_testToken.length()) ghTokenSave(g_testToken);
     if (g_testCode.length() >= 8) accessCodeSave(g_testCode);
@@ -236,9 +238,8 @@ void wifiUpdate() {
 
     case NetState::PORTAL:
       if (g_test == Test::NONE || g_test == Test::FAIL) {
-        if (WiFi.status() == WL_CONNECTED && wifiCredsPresent()) {  // reached via "Change WiFi" and still connected
-          // stay in setup until the user finishes or the timeout below hands back to ONLINE
-        }
+        // Nobody finished setup in time. If we got here via "Change WiFi" we are still on the old
+        // network, so return to it; otherwise go offline (own network only, driving still works).
         if (now - g_portalStartMs > WIFI_PORTAL_TIMEOUT_MS) {
           if (WiFi.status() == WL_CONNECTED) {
             stopAp();
