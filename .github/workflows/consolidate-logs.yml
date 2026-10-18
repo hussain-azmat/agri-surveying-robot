@@ -1,0 +1,35 @@
+name: consolidate-logs
+
+# Rovers upload small log chunks (logs/<rover>/<day>/<seq>_<n>.csv). Each night, merge every finished day
+# into ONE file per rover per day: logs/<rover>/<YYYY-MM-DD>.csv. (See tools/consolidate_logs.py.)
+on:
+  schedule:
+    - cron: "30 0 * * *"   # 00:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: consolidate-logs
+  cancel-in-progress: false
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Merge finished days
+        run: python3 tools/consolidate_logs.py --logs logs
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A logs
+          if git diff --cached --quiet; then echo "nothing to consolidate"; exit 0; fi
+          git commit -m "logs: consolidate finished days [skip ci]"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((i * 3))
+          done
+          exit 1

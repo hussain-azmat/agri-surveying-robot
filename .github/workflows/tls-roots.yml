@@ -1,0 +1,17 @@
+name: tls-roots
+
+# GitHub changes certificate authorities from time to time. The rover validates TLS against the roots in
+# firmware/agri_rover/certs.h and has NO insecure fallback, so if GitHub moved to a CA we do not embed,
+# OTA and log uploads would silently stop. This weekly check fails first, with time to ship a fix.
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GitHub's live chain must validate against the embedded roots
+        run: python3 tools/check_tls_roots.py api.github.com github.com raw.githubusercontent.com

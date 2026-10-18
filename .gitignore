@@ -1,0 +1,23 @@
+# Build output
+build/
+*.elf
+*.map
+
+# Secrets must never be committed. The firmware keeps credentials in the ESP32's flash only,
+# but these patterns catch the usual accidents anyway.
+*.pem
+*.key
+*.token
+secrets.*
+.env
+.env.*
+**/credentials*
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

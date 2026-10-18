@@ -1,0 +1,8 @@
+# Two OTA application slots (the brief, s3) + NVS + a LittleFS partition for logs, paths and config.
+# 4 MB flash. The Arduino ESP32 core uses this file automatically when it sits next to the .ino.
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x9000,   0x5000,
+otadata,   data, ota,     0xe000,   0x2000,
+app0,      app,  ota_0,   0x10000,  0x180000,
+app1,      app,  ota_1,   0x190000, 0x180000,
+spiffs,    data, spiffs,  0x310000, 0xF0000,

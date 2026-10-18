@@ -1,0 +1,4 @@
+# Keep LF everywhere (the CI runs on Linux; a CRLF shebang breaks shell scripts).
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.bin binary
