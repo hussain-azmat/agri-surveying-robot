@@ -15,7 +15,7 @@
 // Bump this to release. CI (.github/workflows/build-firmware.yml) compiles the
 // sketch and publishes ota/version.txt + ota/firmware.bin when it is NEWER than
 // the version currently in ota/version.txt. Format: MAJOR.MINOR.PATCH
-#define FW_VERSION "0.1.1"
+#define FW_VERSION "0.2.0"
 
 // ---- GitHub repo used for OTA, config, paths and logs (non-secret) ---------
 // Can be overridden at runtime from the setup page.
@@ -28,50 +28,73 @@
 #define GH_PATHS_DIR "paths"
 #define GH_LOGS_DIR "logs"
 
-// ---- Pins: PROVISIONAL --------------------------------------------------------
-// The EDD (V0.5, s6.2) says final GPIO assignments are not fixed while the PCB is
-// revised. These are safe defaults for an ESP32-WROOM-32 DevKit (38 pin):
-//  * none of them are flash pins (6-11) or input-only pins (34-39) for outputs,
-//  * none are boot-strapping pins that glitch at reset (0, 2, 5, 12, 14, 15) for
-//    motor outputs, so the motors stay off while the chip boots.
-// CHANGE THEM TO MATCH THE REAL WIRING, then rebuild. See docs/PINOUT.md.
+// ---- Pins ---------------------------------------------------------------------------------
+// SOURCE OF TRUTH: the running sketch surveying_robot.ino (Oct 10 2026) in the hardware repo, which matches
+// EDD V0.5: FOUR separate L298N modules, one per wheel (not the older paired-driver schematics).
+// Each module is driven by three ESP32 pins: IN1 and IN2 choose the direction, EN carries the PWM speed.
+//
+// Two deliberate differences from that sketch (see docs/PINOUT.md, "Wiring changes needed"):
+//  * BR_EN moves from GPIO 21 to GPIO 16: GPIO 21 is the I2C data line (SDA) of the MPU6050, so the
+//    sketch's pinMode(21, OUTPUT) would break the IMU. (Every schematic puts I2C on 21/22.)
+//  * The sketch drives EN only on/off; here EN gets PWM, so speed is controllable.
 //
 // Wheel order everywhere: 0 = front-left, 1 = front-right, 2 = rear-left, 3 = rear-right
 enum Wheel : uint8_t { W_FL = 0, W_FR = 1, W_RL = 2, W_RR = 3, W_COUNT = 4 };
 
-// Each wheel has its own driver channel with two inputs (L298N IN1/IN2, EN jumpered HIGH):
-//   forward: A = PWM, B = LOW      reverse: A = LOW, B = PWM      stop: both LOW
-constexpr int PIN_MOTOR_A[W_COUNT] = {25, 27, 33, 16};
-constexpr int PIN_MOTOR_B[W_COUNT] = {26, 32, 4, 17};
-// Flip a wheel's direction here if it spins backwards on the bench (right side usually).
+//                                        FL  FR  RL  RR
+constexpr int PIN_MOTOR_IN1[W_COUNT] = {25, 27, 32, 18};
+constexpr int PIN_MOTOR_IN2[W_COUNT] = {26, 14, 33, 19};
+constexpr int PIN_MOTOR_EN[W_COUNT] = {13, 23, 4, 16};   // PWM speed. The enable gate: fit pull-downs here
+// Flip a wheel's direction here if it spins backwards on the bench (or swap its motor wires).
 constexpr bool WHEEL_INVERT[W_COUNT] = {false, false, false, false};
 // Per-wheel speed trim (1.0 = nominal). Use to even out motors that differ slightly.
 constexpr float WHEEL_TRIM[W_COUNT] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-constexpr int PIN_I2C_SDA = 21;      // MPU6050
+constexpr int PIN_I2C_SDA = 21;      // MPU6050 (schematics and block diagram: GPIO21/22)
 constexpr int PIN_I2C_SCL = 22;
-constexpr int PIN_GPS_RX = 19;       // ESP32 RX  <- GPS TX
-constexpr int PIN_GPS_TX = 23;       // ESP32 TX  -> GPS RX
-constexpr int PIN_BATT_ADC = 34;     // ADC1 (input only): battery through a voltage divider
+constexpr int PIN_GPS_RX = 34;       // ESP32 RX  <- GPS TX. GPIO34 is input-only, which is all a receive pin needs
+constexpr int PIN_GPS_TX = 17;       // ESP32 TX  -> GPS RX (used to configure the NEO-6M)
+constexpr int PIN_BATT_ADC = 35;     // ADC1 (input only): battery through a voltage divider
 constexpr int PIN_SETUP_BTN = 15;    // to GND; hold ~5 s at boot to re-enter WiFi setup
 constexpr int PIN_STATUS_LED = 2;    // on-board LED on most DevKits
 
-// ---- Compile-time wiring sanity checks (a wrong pin map fails the build, not the field test)
+// ---- Compile-time wiring sanity checks (a wrong pin map fails the build, not the field test) ----
 constexpr bool pinCanOutput(int p) { return p >= 0 && p <= 33 && !(p >= 6 && p <= 11); }
-constexpr bool pinSafeAtBoot(int p) { return !(p == 0 || p == 2 || p == 5 || p == 12 || p == 14 || p == 15); }
+// Boot-strapping or boot-active pins: 0 2 5 12 15 are sampled/driven at reset; 14 emits PWM at boot.
+constexpr bool pinBootSensitive(int p) { return p == 0 || p == 2 || p == 5 || p == 12 || p == 14 || p == 15; }
+// IN pins may be GPIO14 (PWM at boot) because EN is low then; the other boot pins are still out.
+constexpr bool inPinOk(int p) { return pinCanOutput(p) && (!pinBootSensitive(p) || p == 14); }
 constexpr bool motorPinsOk() {
   for (int i = 0; i < W_COUNT; i++) {
-    if (!pinCanOutput(PIN_MOTOR_A[i]) || !pinCanOutput(PIN_MOTOR_B[i])) return false;
-    if (!pinSafeAtBoot(PIN_MOTOR_A[i]) || !pinSafeAtBoot(PIN_MOTOR_B[i])) return false;
-    for (int j = 0; j < W_COUNT; j++) {
-      if (j != i && (PIN_MOTOR_A[i] == PIN_MOTOR_A[j] || PIN_MOTOR_A[i] == PIN_MOTOR_B[j])) return false;
-      if (j != i && (PIN_MOTOR_B[i] == PIN_MOTOR_B[j])) return false;
-    }
-    if (PIN_MOTOR_A[i] == PIN_MOTOR_B[i]) return false;
+    // EN is the gate that keeps a driver off while the chip boots, so it must be a quiet pin.
+    if (!pinCanOutput(PIN_MOTOR_EN[i]) || pinBootSensitive(PIN_MOTOR_EN[i])) return false;
+    if (!inPinOk(PIN_MOTOR_IN1[i]) || !inPinOk(PIN_MOTOR_IN2[i])) return false;
   }
   return true;
 }
-static_assert(motorPinsOk(), "Motor pin map is invalid: duplicates, flash pins, input-only pins or boot-strap pins");
+constexpr bool allPinsUnique() {
+  int all[W_COUNT * 3 + 7] = {};
+  int n = 0;
+  for (int i = 0; i < W_COUNT; i++) {
+    all[n++] = PIN_MOTOR_IN1[i];
+    all[n++] = PIN_MOTOR_IN2[i];
+    all[n++] = PIN_MOTOR_EN[i];
+  }
+  all[n++] = PIN_I2C_SDA;
+  all[n++] = PIN_I2C_SCL;
+  all[n++] = PIN_GPS_RX;
+  all[n++] = PIN_GPS_TX;
+  all[n++] = PIN_BATT_ADC;
+  all[n++] = PIN_SETUP_BTN;
+  all[n++] = PIN_STATUS_LED;
+  for (int i = 0; i < n; i++)
+    for (int j = i + 1; j < n; j++)
+      if (all[i] == all[j]) return false;
+  return true;
+}
+static_assert(motorPinsOk(), "Motor pin map invalid: flash/input-only pin, or a boot-sensitive pin used for EN");
+static_assert(allPinsUnique(), "Two functions share one GPIO (for example I2C SDA and a motor EN)");
+static_assert(pinCanOutput(PIN_GPS_TX) && pinCanOutput(PIN_STATUS_LED), "GPS TX and the LED need output-capable pins");
 
 // ---- Motors ---------------------------------------------------------------------
 constexpr uint32_t MOTOR_PWM_HZ = 10000;

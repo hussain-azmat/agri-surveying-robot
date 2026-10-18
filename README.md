@@ -1,7 +1,7 @@
 # Agri surveying rover
 
 Firmware and tooling for the 4-wheel skid-steer survey rover (ESP32-WROOM-32, 4 independent motor drivers,
-MPU6050, u-blox NEO-6M). It is driven from a phone or laptop web page, or follows a recorded latitude/longitude
+MPU6050, u-blox NEO-6M). Its pins follow the running sketch `surveying_robot.ino` (four L298N modules). It is driven from a phone or laptop web page, or follows a recorded latitude/longitude
 path, and everything it does is logged to this repository. Updates arrive over the air from this same repository.
 
 Design source: *Agri Surveying Robot, Engineering Design Document V0.5* (hardware, power, software architecture).
@@ -41,7 +41,7 @@ docs/                  pin map, architecture, bring-up checklist, releasing
 |---|---|
 | `agri_rover.ino` | `setup()` and `loop()` only; wires the modules together |
 | `config.h` | pins, limits, version constant. **No secrets.** |
-| `motors` | 4 independent drivers, PWM, skid-steer mixing, slew limit, immediate stop. Pins forced LOW first thing at boot |
+| `motors` | 4 L298N channels (IN1/IN2 direction, PWM on EN), skid-steer mixing, slew limit, immediate stop. EN forced LOW first thing at boot |
 | `imu` | MPU6050, gyro-bias calibration, tilt, heading (gyro, aligned by GPS course) |
 | `gps` + `nmea` + `ubx` | NEO-6M: auto-baud, 5 Hz, GGA+RMC only; fix quality, satellites, HDOP |
 | `wifi_manager` | saved network, setup page, captive portal, offline mode |
@@ -57,8 +57,8 @@ Anything marked "pure" has no Arduino dependency and is covered by `test/`.
 
 ## First-time setup
 
-1. **Wire it** per [docs/PINOUT.md](docs/PINOUT.md). The pin map is **provisional**: change `config.h` to match
-   your actual wiring, then rebuild. Fit pull-down resistors on the 8 motor driver inputs.
+1. **Wire it** per [docs/PINOUT.md](docs/PINOUT.md). It follows your running sketch, with **one wiring change**: the RR
+   enable line moves from GPIO 21 (the IMU's I2C data pin) to GPIO 16. Remove the L298N EN jumpers and fit pull-downs on the 4 EN pins.
 2. **Build and flash by USB once** (Arduino IDE 2 or arduino-cli, ESP32 core 3.1.x, ArduinoJson 7). Board
    "ESP32 Dev Module". The sketch folder carries its own `partitions.csv` (two OTA slots), which the IDE picks up
    automatically. After this first flash, updates are over the air.
@@ -97,11 +97,11 @@ measurements to take at each stage.
   geometry, thinning, the path follower in closed-loop simulation (GPS noise up to 2 m, 3% multipath outliers,
   sharp corners, U-turns, closed loops, off-path, stuck, no-fix), every safety rule, OTA version/manifest logic,
   config clamping, motor mixing, and the access-code derivation (matches the sticker tool).
-* 17 tooling tests: the OTA publisher, log consolidation, version bumping.
+* 20 tooling tests: the OTA publisher, log consolidation, version bumping, and the compile-time pin checks (they reject the sketch's original GPIO 21 clash).
 * GitHub's live TLS chains validate against the embedded roots (`tools/check_tls_roots.py`).
 
 **Not verified: needs the real rover, and will need tuning:**
-* Pin map, motor directions (`WHEEL_INVERT`), `MOTOR_MIN_DUTY`, and the L298N under stall (the EDD flags that a
+* The pin map against your real wiring (it comes from the sketch, not from a bench run), motor directions (`WHEEL_INVERT`), `MOTOR_MIN_DUTY`, and the L298N under stall (the EDD flags that a
   GA25-370 stall current of 1.8-4 A exceeds an L298N channel's ~2 A).
 * IMU noise with the motors running; GPS performance with the new small patch antenna.
 * `turn_full_dps` (how fast the rover really turns at full command). Auto-mode accuracy depends on it.
@@ -151,7 +151,7 @@ measurements to take at each stage.
 1. The **Stage 5 "error measurements below"** were cut off in the brief that was shared. The log already records
    cross-track error (`xte_m`) and waypoint index in auto mode; please send the exact measurements wanted
    (for example max/mean cross-track error, end-point error, time per lap) and where they should be reported.
-2. **Final pin map** once the PCB revision settles ([docs/PINOUT.md](docs/PINOUT.md)).
+2. **Confirm the GPIO 21 clash** (BR_EN vs the IMU's SDA) and the new GPS pins ([docs/PINOUT.md](docs/PINOUT.md)); the final map once the PCB revision settles.
 3. **Battery chemistry and divider** (thresholds in `config/rover.cfg` assume 3S Li-ion).
 4. **Motor driver**: the L298N is rated below the motor stall current; the final driver part is still open in the EDD.
 

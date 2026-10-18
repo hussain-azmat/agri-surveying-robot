@@ -173,5 +173,46 @@ class ConsolidateLogs(unittest.TestCase):
         self.assertEqual(consolidate_logs.consolidate(self.root / "nope", "2026-10-05"), ([], []))
 
 
+class PinChecks(unittest.TestCase):
+    """The compile-time pin checks in config.h must catch real wiring mistakes."""
+
+    CONFIG = Path(__file__).resolve().parent.parent / "firmware" / "agri_rover" / "config.h"
+
+    def compiles(self, mutate=None):
+        import shutil
+        import subprocess
+        gpp = shutil.which("g++")
+        if not gpp:
+            self.skipTest("g++ not available")
+        text = self.CONFIG.read_text(encoding="utf-8")
+        if mutate:
+            mutated = mutate(text)
+            self.assertNotEqual(mutated, text, "mutation did not change config.h")
+            text = mutated
+        d = Path(tempfile.mkdtemp())
+        (d / "config.h").write_text(text, encoding="utf-8")
+        (d / "t.cpp").write_text('#include "config.h"\nint main(){return 0;}\n')
+        p = subprocess.run([gpp, "-std=c++17", "-fsyntax-only", str(d / "t.cpp")], capture_output=True, text=True)
+        return p.returncode == 0, p.stderr
+
+    def test_shipped_pin_map_is_valid(self):
+        ok, err = self.compiles()
+        self.assertTrue(ok, err)
+
+    def test_the_original_sketch_clash_is_rejected(self):
+        # The Oct-10 sketch used GPIO 21 for BR_EN, which is also the IMU's I2C SDA.
+        ok, err = self.compiles(lambda t: t.replace("{13, 23, 4, 16}", "{13, 23, 4, 21}"))
+        self.assertFalse(ok)
+        self.assertIn("share one GPIO", err)
+
+    def test_a_flash_pin_or_boot_pin_for_enable_is_rejected(self):
+        ok, _ = self.compiles(lambda t: t.replace("{13, 23, 4, 16}", "{13, 23, 4, 9}"))   # flash pin
+        self.assertFalse(ok)
+        ok, _ = self.compiles(lambda t: t.replace("{13, 23, 4, 16}", "{13, 23, 4, 12}"))  # boot-strap pin
+        self.assertFalse(ok)
+        ok, _ = self.compiles(lambda t: t.replace("{13, 23, 4, 16}", "{13, 23, 4, 36}"))  # input-only
+        self.assertFalse(ok)
+
+
 if __name__ == "__main__":
     unittest.main()

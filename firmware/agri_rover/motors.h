@@ -1,10 +1,11 @@
 #pragma once
-// Four independent motor drivers (one L298N channel per wheel), PWM speed control,
+// Four independent motor drivers (one L298N module per wheel: IN1/IN2 = direction, EN = PWM speed),
 // skid-steer mixing, slew-rate limiting and an immediate stop.
 //
-// SAFETY: motorsBegin() is the FIRST thing setup() calls. It forces every driver input LOW
+// SAFETY: motorsBegin() is the FIRST thing setup() calls. It forces every EN and IN pin LOW
 // before anything else (WiFi, flash, sensors) can run. For the short time before setup()
-// starts, the pins float: fit 10k pull-down resistors on the 8 driver inputs (docs/PINOUT.md).
+// starts, the pins float: fit 10k pull-down resistors on the 4 EN pins, which gate the drivers
+// (docs/PINOUT.md).
 #include <Arduino.h>
 
 #include "config.h"
