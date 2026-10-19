@@ -190,4 +190,5 @@ measurements to take at each stage.
 
 * `./tools/test_host.sh` (or `tools\test_host.ps1` on Windows) runs the unit tests; no hardware needed.
 * `python -m unittest tools.test_tools` runs the tooling tests.
+* **New team member?** Start with [docs/CONTRIBUTOR_GUIDE.md](docs/CONTRIBUTOR_GUIDE.md): laptop setup, first flash, daily workflow.
 * To release: `python tools/bump_version.py patch`, commit, push. See [docs/RELEASING.md](docs/RELEASING.md).
