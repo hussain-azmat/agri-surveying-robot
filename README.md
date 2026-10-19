@@ -72,6 +72,13 @@ failsafe rules, version logic...), so it is unit-tested on a laptop; the part un
    ```
    python tools/build_firmware.py        # needs arduino-cli; prints the size and the image path
    ```
+   Or flash the one-file image `build/out/agri_rover.ino.merged.bin` (bootloader + partition table + app) at address 0:
+   ```
+   python -m pip install esptool
+   python -m esptool --chip esp32 --port COM5 erase_flash
+   python -m esptool --chip esp32 --port COM5 write_flash 0x0 build/out/agri_rover.ino.merged.bin
+   ```
+   (Use your own port. If it cannot connect, hold the BOOT button while it says "Connecting...".)
 3. **Power up.** With no saved WiFi the rover starts its own network `RoverSetup-xxxx`. The password is the rover's
    **access code**: print it for a label with `python tools/ap_password.py <MAC>` (the MAC is printed on the serial
    console at boot). Join it, open any web page, pick your WiFi, enter the password, and optionally a GitHub token.

@@ -8,7 +8,8 @@ Do the stages in order; each one needs the previous. Record the measurements: th
 
 - [ ] Remove the L298N EN jumpers, fit 10 k pull-downs on the 4 EN pins, and **move the RR enable wire from GPIO 21 to GPIO 16**
       (GPIO 21 is the IMU's SDA). Power the rover with the **wheels off the ground**.
-- [ ] Flash by USB. Serial console shows `=== agri rover firmware v0.1.0 ===`, the MAC, and `ready, disarmed`.
+- [ ] Flash by USB (see "First-time setup" in README.md). Serial console (115200) shows JSON lines: `"agri rover firmware v0.3.0 starting"`,
+      the IMU pin check, the MAC, and `{"status":"READY","state":"DISARMED"}`.
 - [ ] **Motors off at boot:** press reset 10 times with the console open. No wheel twitches at any reset.
 - [ ] Open the control page → System → **Spin wheel 1 s** for each of FL, FR, RL, RR. Each must turn the expected wheel,
       *forward* (positive speed). If a wheel is wrong or reversed, fix `PIN_MOTOR_*` / `WHEEL_INVERT` in `config.h` (or swap that motor's wires).
