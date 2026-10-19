@@ -94,6 +94,42 @@ size_t formatMessageJson(char* out, size_t cap, const char* status, const char* 
   return finish(out, cap, snprintf(out, cap, "{\"status\":\"%s\",\"message\":\"%s\"}", s, m));
 }
 
+const char* logHeader() {
+  return "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event,"
+         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pitch_deg,roll_deg\n";
+}
+
+size_t formatLogRow(char* out, size_t cap, const char* utc, uint32_t uptimeMs, const char* mode, bool battKnown,
+                    float battV, bool autoMode, float xteM, int wp, const GpsData& g, const ImuData& i,
+                    const char* event) {
+  char batt[12] = "", xte[12] = "", wps[12] = "", lat[20] = "", lon[20] = "";
+  if (battKnown) snprintf(batt, sizeof(batt), "%.2f", fin(battV));
+  if (autoMode) {
+    snprintf(xte, sizeof(xte), "%.2f", fin(xteM));
+    snprintf(wps, sizeof(wps), "%d", wp);
+  }
+  if (g.fix) {
+    snprintf(lat, sizeof(lat), "%.7f", fin(g.lat));
+    snprintf(lon, sizeof(lon), "%.7f", fin(g.lon));
+  }
+  char imu[112];
+  if (i.ok) {
+    snprintf(imu, sizeof(imu), "%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.1f,%.1f", fin(i.accelX), fin(i.accelY), fin(i.accelZ),
+             fin(i.gyroX), fin(i.gyroY), fin(i.gyroZ), fin(i.pitchDeg), fin(i.rollDeg));
+  } else {
+    strcpy(imu, ",,,,,,,");  // eight empty fields: IMU not answering
+  }
+  const int n = snprintf(out, cap, "%s,%lu,%s,%s,%u,%u,%.1f,%.2f,%.0f,%.1f,%s,%s,%s,%s,%s,%s\n", utc ? utc : "",
+                         (unsigned long)uptimeMs, lat, lon, (unsigned)g.quality, (unsigned)g.sats, fin(g.hdop),
+                         fin(g.speedMps), g.courseValid ? fin(g.courseDeg) : 0.0, i.yawValid ? fin(i.yawDeg) : 0.0,
+                         mode ? mode : "", batt, xte, wps, event ? event : "", imu);
+  if (n <= 0 || (size_t)n >= cap) {
+    if (cap) out[0] = '\0';
+    return 0;
+  }
+  return (size_t)n;
+}
+
 size_t formatEventJson(char* out, size_t cap, const char* event, const char* detail) {
   char e[60], d[120];
   jsonEscape(event ? event : "", e, sizeof(e));
@@ -123,9 +159,6 @@ uint32_t nvsGet(const char* key, uint32_t def) { return nvs().getUInt(key, def);
 void nvsPut(const char* key, uint32_t value) { nvs().putUInt(key, value); }
 
 
-const char* kHeader =
-    "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event\n";
-
 char g_buf[2048];
 size_t g_bufN = 0;
 File g_cur;
@@ -154,7 +187,7 @@ bool openCur() {
   g_cur = LittleFS.open("/log/cur.csv", FILE_APPEND);
   if (!g_cur) return false;
   g_curOpen = true;
-  if (g_cur.size() == 0) g_cur.print(kHeader);
+  if (g_cur.size() == 0) g_cur.print(logHeader());
   return true;
 }
 
@@ -182,7 +215,7 @@ bool rotate() {
   if (!f) return false;
   const size_t size = f.size();
   f.close();
-  if (size <= strlen(kHeader)) {  // header only: nothing worth uploading
+  if (size <= strlen(logHeader())) {  // header only: nothing worth uploading
     LittleFS.remove("/log/cur.csv");
     return false;
   }
@@ -234,24 +267,10 @@ void appendRow(const RoverState& s, const char* event) {
   if (strcmp(g_curDate, "00000000") == 0 && strcmp(date, "00000000") != 0) strcpy(g_curDate, date);
 
   const char* mode = s.mode == Mode::AUTO ? "AUTO" : (s.mode == Mode::MANUAL ? (s.recording ? "REC" : "MAN") : "OFF");
-  char batt[12] = "";
-  if (s.battKnown) snprintf(batt, sizeof(batt), "%.2f", s.battV);
-  char xte[12] = "", wp[12] = "";
-  if (s.mode == Mode::AUTO) {
-    snprintf(xte, sizeof(xte), "%.2f", s.follow.xteM);
-    snprintf(wp, sizeof(wp), "%d", s.follow.wpIndex);
-  }
-  char lat[20] = "", lon[20] = "";
-  if (s.gps.fix) {
-    snprintf(lat, sizeof(lat), "%.7f", s.gps.lat);
-    snprintf(lon, sizeof(lon), "%.7f", s.gps.lon);
-  }
-  char line[220];
-  const int n = snprintf(line, sizeof(line), "%s,%lu,%s,%s,%u,%u,%.1f,%.2f,%.0f,%.1f,%s,%s,%s,%s,%s\n", utc,
-                         (unsigned long)millis(), lat, lon, (unsigned)s.gps.quality, (unsigned)s.gps.sats, s.gps.hdop,
-                         s.gps.speedMps, s.gps.courseValid ? s.gps.courseDeg : 0.0f, s.imu.yawValid ? s.imu.yawDeg : 0.0f,
-                         mode, batt, xte, wp, event ? event : "");
-  if (n <= 0 || n >= (int)sizeof(line)) return;
+  char line[320];
+  const size_t n = formatLogRow(line, sizeof(line), utc, millis(), mode, s.battKnown, s.battV, s.mode == Mode::AUTO,
+                                s.follow.xteM, s.follow.wpIndex, s.gps, s.imu, event);
+  if (n == 0) return;
   if (g_bufN + n > sizeof(g_buf)) flushBuf();
   memcpy(g_buf + g_bufN, line, n);
   g_bufN += n;
@@ -383,9 +402,14 @@ void logService(bool online, bool idle) {
     nvsPut("lq_seq", 0xFFFFFFFF);
     return;
   }
+  // Every chunk after the first carries the file's OWN header line, so a file written by an older firmware (fewer
+  // columns) is never given the new header.
+  char hdr[256];
+  f.seek(0);
+  size_t hdrLen = f.readBytesUntil('\n', hdr, sizeof(hdr) - 2);
+  hdr[hdrLen++] = '\n';
   f.seek(off);
 
-  const size_t hdrLen = strlen(kHeader);
   const size_t cap = LOG_UPLOAD_CHUNK_BYTES;
   uint8_t* buf = (uint8_t*)malloc(cap + hdrLen);
   if (!buf) {
@@ -395,7 +419,7 @@ void logService(bool online, bool idle) {
   }
   size_t used = 0;
   if (off > 0) {  // every chunk must stand alone, so it carries its own header
-    memcpy(buf, kHeader, hdrLen);
+    memcpy(buf, hdr, hdrLen);
     used = hdrLen;
   }
   const size_t got = f.read(buf + used, cap);

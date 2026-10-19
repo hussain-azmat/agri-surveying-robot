@@ -508,3 +508,70 @@ TEST(serial_long_text_is_cut_before_formatting_not_in_the_middle_of_the_line) {
   formatMessageJson(b, sizeof(b), "ERROR", huge.c_str());
   CHECK(looksLikeJsonObject(b));
 }
+
+// --------------------------------------------------------------- log rows ----
+
+namespace {
+int countCommas(const char* s) {
+  int n = 0;
+  for (; *s; s++) n += *s == ',';
+  return n;
+}
+}  // namespace
+
+TEST(log_row_has_exactly_as_many_fields_as_the_header_in_every_situation) {
+  const int headerCommas = countCommas(logHeader());
+  CHECK(strstr(logHeader(), ",accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pitch_deg,roll_deg\n") != nullptr);
+  char row[320];
+  GpsData g;
+  ImuData im;
+  // nothing available at all: no fix, no IMU, no battery, no clock
+  CHECK(formatLogRow(row, sizeof(row), "", 5, "OFF", false, 0, false, 0, 0, g, im, "") > 0);
+  CHECK(countCommas(row) == headerCommas);
+  // everything available, AUTO
+  g.fix = true; g.quality = 1; g.sats = 9; g.hdop = 1.1f; g.lat = 31.5204123; g.lon = 74.3587456; g.speedMps = 0.85f;
+  g.courseValid = true; g.courseDeg = 84.4f;
+  im.ok = true; im.yawValid = true; im.yawDeg = 83.6f; im.pitchDeg = 1.5f; im.rollDeg = -2.25f;
+  im.accelX = 0.12f; im.accelY = -0.03f; im.accelZ = 9.81f; im.gyroX = 0.001f; im.gyroY = 0.01f; im.gyroZ = -0.0234f;
+  CHECK(formatLogRow(row, sizeof(row), "2026-10-20T06:12:03.200Z", 184220, "AUTO", true, 12.34f, true, 0.31f, 12, g, im, "ARM:AUTO") > 0);
+  CHECK(countCommas(row) == headerCommas);
+}
+
+TEST(log_row_content_and_order) {
+  GpsData g;
+  g.fix = true; g.quality = 1; g.sats = 9; g.hdop = 1.1f; g.lat = 31.5204123; g.lon = 74.3587456; g.speedMps = 0.85f;
+  g.courseValid = true; g.courseDeg = 84.4f;
+  ImuData im;
+  im.ok = true; im.yawValid = true; im.yawDeg = 83.6f; im.pitchDeg = 1.5f; im.rollDeg = -2.25f;
+  im.accelX = 0.12f; im.accelY = -0.03f; im.accelZ = 9.81f; im.gyroX = 0.001f; im.gyroY = 0.01f; im.gyroZ = -0.0234f;
+  char row[320];
+  const size_t n = formatLogRow(row, sizeof(row), "2026-10-20T06:12:03.200Z", 184220, "AUTO", false, 0, true, 0.31f, 12, g, im, "");
+  CHECK(n == strlen(row));
+  CHECK(strcmp(row, "2026-10-20T06:12:03.200Z,184220,31.5204123,74.3587456,1,9,1.1,0.85,84,83.6,AUTO,,0.31,12,,"
+                    "0.12,-0.03,9.81,0.001,0.010,-0.023,1.5,-2.2\n") == 0 ||
+        strcmp(row, "2026-10-20T06:12:03.200Z,184220,31.5204123,74.3587456,1,9,1.1,0.85,84,83.6,AUTO,,0.31,12,,"
+                    "0.12,-0.03,9.81,0.001,0.010,-0.023,1.5,-2.3\n") == 0);
+  CHECK(row[n - 1] == '\n');
+}
+
+TEST(log_row_leaves_unavailable_fields_empty_not_zero) {
+  GpsData g;  // no fix
+  ImuData im; // not answering
+  char row[320];
+  formatLogRow(row, sizeof(row), "", 5, "MAN", false, 0, false, 9, 9, g, im, "");
+  // no position, no battery, no xte/wp (not AUTO), no IMU values
+  CHECK(strstr(row, ",MAN,,,,,,,,,,,,\n") != nullptr);
+}
+
+TEST(log_row_never_prints_nan_and_reports_overflow) {
+  GpsData g;
+  ImuData im;
+  im.ok = true;
+  im.accelX = NAN; im.gyroZ = INFINITY; im.pitchDeg = NAN;
+  char row[320];
+  CHECK(formatLogRow(row, sizeof(row), "t", 1, "MAN", false, 0, false, 0, 0, g, im, "") > 0);
+  CHECK(!strstr(row, "nan") && !strstr(row, "inf") && !strstr(row, "NAN"));
+  char tiny[20];
+  CHECK(formatLogRow(tiny, sizeof(tiny), "t", 1, "MAN", false, 0, false, 0, 0, g, im, "") == 0);  // does not fit: nothing half-written
+  CHECK(tiny[0] == '\0');
+}

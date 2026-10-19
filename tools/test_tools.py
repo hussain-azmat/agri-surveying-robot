@@ -11,7 +11,7 @@ import bump_version  # noqa: E402
 import consolidate_logs  # noqa: E402
 import publish_ota  # noqa: E402
 
-HEADER = "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event"
+HEADER = "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pitch_deg,roll_deg"
 
 
 def make_repo(version="0.1.0", slot="0x180000"):

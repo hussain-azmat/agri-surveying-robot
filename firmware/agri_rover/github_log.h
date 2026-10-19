@@ -22,6 +22,19 @@ size_t formatMessageJson(char* out, size_t cap, const char* status, const char* 
 // {"event":"OTA_START","detail":"0.2.1"}   (detail optional)
 size_t formatEventJson(char* out, size_t cap, const char* event, const char* detail);
 
+// ---- Log rows (pure: unit-tested on a laptop) ----------------------------------------------------
+// The CSV header line, including its newline. New columns are only ever added at the END, so older columns keep their place.
+const char* logHeader();
+// One CSV row (with newline) into `out`; returns its length, or 0 if it did not fit. Empty fields mean "not available":
+// no position without a fix, no battery without a sensor, no xte/wp outside AUTO, no IMU values if the IMU is not answering.
+//   utc            may be "" if the clock is not set
+//   mode           "AUTO" / "REC" / "MAN" / "OFF"
+//   xteM, wp       only written when `autoMode`
+//   accel_*  m/s^2 and gyro_* rad/s are the raw readings (same as the serial {"imu":...} line), pitch/roll in degrees
+size_t formatLogRow(char* out, size_t cap, const char* utc, uint32_t uptimeMs, const char* mode, bool battKnown,
+                    float battV, bool autoMode, float xteM, int wp, const GpsData& g, const ImuData& i,
+                    const char* event);
+
 #ifdef ARDUINO
 #include <Arduino.h>
 #include "safety.h"
@@ -36,7 +49,7 @@ void serialTelemetry(const RoverState& s);
 // Rover log: 5 Hz rows written to flash while armed, uploaded to GitHub in BATCHES when stopped.
 //
 // Rows (CSV): utc, uptime_ms, lat, lon, fix, sats, hdop, speed_mps, course_deg, yaw_deg, mode,
-//             batt_v, xte_m, wp, event
+//             batt_v, xte_m, wp, event, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, pitch_deg, roll_deg
 //
 //  * Rows go to /log/cur.csv in flash, buffered so flash is written about once a second, never per row.
 //  * When the rover has been stopped for a while (and is online) the data is queued and uploaded as

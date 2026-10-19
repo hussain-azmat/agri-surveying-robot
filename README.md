@@ -16,7 +16,9 @@ Design source: *Agri Surveying Robot, Engineering Design Document V0.5* (hardwar
 * **Auto mode**: loads `paths/<name>.csv` and follows it with a 4 m acceptance radius. Stops at the end, on GPS loss,
   when it leaves the path, when it stops making progress, or when the control page goes quiet.
 * **Logging**: 5 Hz rows (time, lat, lon, fix quality, satellites, HDOP, speed, course, yaw, mode, battery,
-  cross-track error, waypoint) to flash, uploaded to `logs/` in batches while stopped. Offline-safe.
+  cross-track error, waypoint, event, and the IMU: raw accel x/y/z in m/s^2, raw gyro x/y/z in rad/s, pitch, roll)
+  to flash, uploaded to `logs/` in batches while stopped. Offline-safe. Columns: see `logHeader()` in `github_log.cpp`;
+  empty means "not available" (no fix, no IMU, no battery sensor, not in auto mode).
 * **OTA updates**: bump the version, push, CI builds and publishes `ota/`. **At power-up, as soon as the rover is online,
   it checks for a newer version and installs it by itself** (then re-checks every 5 minutes while stopped). It verifies the
   MD5 first and stays disarmed afterwards. The control page also has **Check for update** and **Install update** buttons, and
@@ -115,7 +117,7 @@ measurements to take at each stage.
 
 **Verified (on a laptop and in CI):**
 * The firmware compiles for `esp32:esp32:esp32` (core 3.1.3) with no warnings from this code.
-* 79 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
+* 83 host unit tests: NMEA parsing (real reference sentences, bad checksums, garbage, partial lines), u-blox frames,
   geometry, thinning, the path follower in closed-loop simulation (GPS noise up to 2 m, 3% multipath outliers,
   sharp corners, U-turns, closed loops, off-path, stuck, no-fix), every safety rule, OTA version/manifest logic,
   config clamping, motor mixing, and the access-code derivation (matches the sticker tool).
