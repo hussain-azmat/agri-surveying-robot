@@ -1,7 +1,7 @@
 name: tls-roots
 
 # GitHub changes certificate authorities from time to time. The rover validates TLS against the roots in
-# firmware/agri_rover/certs.h and has NO insecure fallback, so if GitHub moved to a CA we do not embed,
+# Software/OTA/Src/certs.h and has NO insecure fallback, so if GitHub moved to a CA we do not embed,
 # OTA and log uploads would silently stop. This weekly check fails first, with time to ship a fix.
 on:
   schedule:

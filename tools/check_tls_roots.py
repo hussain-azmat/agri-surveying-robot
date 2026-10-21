@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fail if GitHub's live certificate chain no longer validates against the roots embedded in
-firmware/agri_rover/certs.h. This mirrors what the ESP32 does (validate the server chain against
+Software/OTA/Src/certs.h. This mirrors what the ESP32 does (validate the server chain against
 a fixed set of roots), so it detects a CA change BEFORE the rover's OTA/log uploads break.
 
 Run weekly by .github/workflows/tls-roots.yml. Needs the `openssl` command line tool.
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CERTS_H = ROOT / "firmware" / "agri_rover" / "certs.h"
+CERTS_H = ROOT / "Software" / "OTA" / "Src" / "certs.h"
 
 
 def embedded_roots_pem():

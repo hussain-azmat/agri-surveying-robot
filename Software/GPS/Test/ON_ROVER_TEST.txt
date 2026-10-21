@@ -1,0 +1,13 @@
+GPS on-rover test   (flash Bin/gps.bin or build the gps bench; serial monitor 115200)
+Do this OUTSIDE with a clear view of the sky, antenna patch facing up, away from the motors and converters.
+
+[ ] 1  Within 10 s: {"gps_link":{"healthy":true,"baud":38400, ...}}.  (The driver found the module and switched it to 38400.)
+       PASS = healthy true and baud 38400. If healthy stays false: GPS TX -> GPIO 34, GPS RX <- GPIO 17, power, ground.
+[ ] 2  rate_hz reads about 5.0 (4.5 - 5.5).                                                    value: ______
+[ ] 3  A fix within a few minutes: {"gps":{"fix":true ...}}.  PASS = fix true, sats 6 or more, hdop under 3.   time to fix: ______
+[ ] 4  Compare lat / lon with a phone map at the same spot.   PASS = within about 5 m
+[ ] 5  Walk 20 m in a straight line holding the antenna: lat / lon move by about 20 m; speed_mps near your walking speed;
+       course_deg points the way you walked (speed above 0.3 m/s).                              PASS
+[ ] 6  Unplug and replug the GPS: healthy goes false, then true again by itself.                PASS
+[ ] 7  bad_checksum stays near 0 while you are still.                                          value: ______
+Antenna placement matters most: outside the steel chassis, on a metal ground plane if possible.

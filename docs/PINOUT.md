@@ -4,7 +4,7 @@
 EDD V0.5: **four separate L298N modules, one per wheel.** Older schematics in that repo show other generations
 (Aug 19: four BTS7960; Sep 8 "FINAL SCHEMA": two L298N modules, one per side) and should be treated as superseded.
 
-The pins live in `firmware/agri_rover/config.h`. The build **fails** if two functions share a GPIO, if a motor EN pin is a
+The pins live in `Software/Common/Src/config.h`. The build **fails** if two functions share a GPIO, if a motor EN pin is a
 flash, input-only or boot-sensitive pin, or if an IN pin is one of the boot-strapping pins (tests prove it rejects the
 sketch's original clash, see below).
 

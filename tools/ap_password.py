@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print a rover's setup-network name and its access code, from its MAC address.
 
-The rover derives these itself (firmware/agri_rover/wifi_manager.cpp); this tool computes the same
+The rover derives these itself (Software/WiFi/Src/wifi_manager.cpp); this tool computes the same
 values so you can print a sticker for each unit before it is ever powered on.
 
     python tools/ap_password.py A4:CF:12:34:56:78
@@ -36,7 +36,7 @@ def derive(salt, mac_hex12):
 
 
 def read_salt():
-    cfg = Path(__file__).resolve().parent.parent / "firmware" / "agri_rover" / "config.h"
+    cfg = Path(__file__).resolve().parent.parent / "Software" / "Common" / "Src" / "config.h"
     m = re.search(r'#define\s+AP_PASSWORD_SALT\s+"([^"]*)"', cfg.read_text(encoding="utf-8"))
     if not m:
         raise SystemExit("AP_PASSWORD_SALT not found in config.h")

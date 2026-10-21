@@ -30,7 +30,7 @@ def parse_semver(text):
 
 
 def read_fw_version(root):
-    text = (root / "firmware" / "agri_rover" / "config.h").read_text(encoding="utf-8")
+    text = (root / "Software" / "Common" / "Src" / "config.h").read_text(encoding="utf-8")
     m = re.search(r'#define\s+FW_VERSION\s+"([^"]+)"', text)
     if not m:
         raise ValueError("FW_VERSION not found in config.h")
@@ -51,8 +51,8 @@ def read_manifest(path):
 
 
 def ota_slot_bytes(root):
-    """Size of the app0 partition in firmware/agri_rover/partitions.csv."""
-    for line in (root / "firmware" / "agri_rover" / "partitions.csv").read_text().splitlines():
+    """Size of the app0 partition in Software/Rover/Src/partitions.csv."""
+    for line in (root / "Software" / "Rover" / "Src" / "partitions.csv").read_text().splitlines():
         parts = [p.strip() for p in line.split(",")]
         if len(parts) >= 5 and parts[0] == "app0":
             return int(parts[4], 0)

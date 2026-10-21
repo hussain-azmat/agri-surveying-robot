@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bump FW_VERSION in firmware/agri_rover/config.h.
+"""Bump FW_VERSION in Software/Common/Src/config.h.
 
     python tools/bump_version.py patch     0.1.0 -> 0.1.1   (bug fix)
     python tools/bump_version.py minor     0.1.3 -> 0.2.0   (new feature)
@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-CONFIG = Path(__file__).resolve().parent.parent / "firmware" / "agri_rover" / "config.h"
+CONFIG = Path(__file__).resolve().parent.parent / "Software" / "Common" / "Src" / "config.h"
 SEMVER = re.compile(r"^(\d{1,5})\.(\d{1,5})\.(\d{1,5})$")
 
 

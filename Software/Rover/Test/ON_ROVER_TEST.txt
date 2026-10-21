@@ -1,0 +1,3 @@
+Whole-rover test: docs/BRINGUP.md at the repo root (Stages 0 to 5, each with pass criteria and a place to record measurements).
+Do the stages in order, wheels off the ground until the checklist says otherwise.
+The function-by-function checks are in Software/<Function>/Test/ON_ROVER_TEST.txt.

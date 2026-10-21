@@ -54,6 +54,6 @@ the serial console or the logs.
 
 ## Keeping TLS working
 
-Rovers trust the root CAs in `firmware/agri_rover/certs.h` and have no insecure fallback. GitHub changes its certificate
+Rovers trust the root CAs in `Software/OTA/Src/certs.h` and have no insecure fallback. GitHub changes its certificate
 authorities occasionally, so the weekly `tls-roots` workflow checks that GitHub's live chain still validates against them
 and fails *before* anything breaks. If it fails: `python tools/gen_certs.py <ca-bundle.pem>`, bump the version, release.

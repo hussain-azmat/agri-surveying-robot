@@ -1,0 +1,12 @@
+OTA on-rover test   (flash Bin/ota.bin or build the ota bench; serial monitor 115200)
+The rover needs a saved WiFi network first (the bench includes the setup page). The repo is public: no token needed.
+
+[ ] 1  When online it prints "update check: ..." once. Same version as the repo -> "up to date".          PASS
+[ ] 2  Publish a newer version (bump FW_VERSION, push, wait for CI to go green). Type c: it reports a newer version available.
+[ ] 3  Type i: {"event":"OTA_START"...} appears, then {"event":"OTA_DONE"...} and the rover reboots into the new version,
+       DISARMED. The new version number appears in the first serial line.                             PASS
+[ ] 4  Bad download keeps the old firmware: on a copy of the repo, publish a version.txt with a wrong md5, point the rover at it
+       (or cut the power mid-download). The rover reports the failure and keeps running the OLD version.   PASS
+[ ] 5  (Full firmware) Arm the rover and ask for an update: it refuses ("disarm first").                   PASS
+[ ] 6  An older version in the repo than the one on the rover is ignored.                                   PASS
+There is no automatic rollback: to undo a bad release, publish a NEWER version that reverts it.

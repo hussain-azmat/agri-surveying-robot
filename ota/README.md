@@ -5,12 +5,12 @@ What every rover updates itself from. **Do not edit these files by hand**: CI wr
 | File | What it is |
 |---|---|
 | `version.txt` | `version=`, `md5=` and `size=` of the image. The rover verifies the download against the MD5 before it can boot. |
-| `firmware.bin` | The compiled application image (`agri_rover.ino.bin`), built by GitHub Actions from `firmware/`. |
+| `firmware.bin` | The compiled application image (`agri_rover.ino.bin`), built by GitHub Actions from `Software/`. |
 
 ## Releasing
 
 ```bash
-python tools/bump_version.py patch      # edits FW_VERSION in firmware/agri_rover/config.h
+python tools/bump_version.py patch      # edits FW_VERSION in Software/Common/Src/config.h
 git commit -am "Fix X" && git push
 ```
 

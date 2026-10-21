@@ -28,21 +28,41 @@ Design source: *Agri Surveying Robot, Engineering Design Document V0.5* (hardwar
 ## Repository layout
 
 ```
-firmware/agri_rover/   the Arduino sketch: thin main + one module per job (below)
+Software/              the code, ONE FOLDER PER FUNCTION (below): each has Readme.txt, Src/, Bin/, Test/
 ota/                   version.txt + firmware.bin, written by CI, read by the rovers
 paths/                 recorded or hand-made paths (CSV)
 config/rover.cfg       runtime tuning, no rebuild needed
 logs/                  uploaded rover logs (chunks, merged nightly into one file per rover per day)
-test/                  host-side unit tests (run on a laptop, no ESP32 needed)
 tools/                 build, release, sticker and CI helper scripts
-docs/                  pin map, architecture, bring-up checklist, releasing
+docs/                  pin map, architecture, bring-up checklist, releasing, contributor guide
 .github/workflows/     build + OTA publish, nightly log merge, weekly TLS-root check
 ```
 
-### Firmware: one sketch, one module per job
+### Software: one folder per function
 
-Everything is in `firmware/agri_rover/`: **one `.ino`** (setup and loop only), **`config.h`**, **`ui.h`**, and **one
-`.h`/`.cpp` pair per job**. Nothing else to hunt for.
+```
+Software/
+  MPU/      Readme.txt   Src/ imu.h imu.cpp mpu.ino        Bin/ mpu.bin       Test/   inertial sensor
+  GPS/      Readme.txt   Src/ gps.h gps.cpp gps.ino        Bin/ gps.bin       Test/   NEO-6M position, speed, time
+  Motors/   Readme.txt   Src/ motors.h motors.cpp motors.ino   Bin/ motors.bin   Test/   4 wheel drivers + mixer
+  WiFi/     Readme.txt   Src/ wifi_manager.h/.cpp wifi.ino Bin/ wifi.bin      Test/   network, setup page, access code
+  OTA/      Readme.txt   Src/ ota_github.h/.cpp certs.h ota.ino   Bin/ ota.bin   Test/   GitHub client, updates, config
+  Logging/  Readme.txt   Src/ github_log.h/.cpp                                   Test/   serial JSON, CSV log, upload
+  Path/     Readme.txt   Src/ path.h path.cpp                                      Test/   record, thin, follow
+  Remote/   Readme.txt   Src/ remote.h remote.cpp ui.h                             Test/   web server, control page
+  Safety/   Readme.txt   Src/ safety.h safety.cpp                                  Test/   failsafes, shared state, control task
+  Common/   Readme.txt   Src/ config.h                                             Test/   pins, version, limits + test harness
+  Rover/    Readme.txt   Src/ agri_rover.ino partitions.csv                        Test/   the complete firmware (thin main)
+```
+
+Every function's `Readme.txt` says what it does, its hardware, how to build and flash it, and its pass criteria; `Test/` holds
+its laptop unit tests (`test_*.cpp`) and its on-rover checklist (`ON_ROVER_TEST.txt`). The functions that touch hardware
+(MPU, GPS, Motors, WiFi, OTA) also have a small **bench sketch** (`Src/<name>.ino`) whose compiled image is in `Bin/`: flash it
+to prove that one function on the rover on its own (serial output as JSON lines). Index: [Software/Readme.txt](Software/Readme.txt).
+
+The Arduino toolchain needs one folder per sketch, so `tools/stage_sketch.py` gathers a sketch plus every `Software/*/Src` file
+into `build/stage/<name>/`, and `tools/build_firmware.py` does that and compiles. **Edit the files in `Software/`, never the
+copies in `build/`.**
 
 | File | Job |
 |---|---|
@@ -53,7 +73,7 @@ Everything is in `firmware/agri_rover/`: **one `.ino`** (setup and loop only), *
 | `gps` | NEO-6M at 5 Hz: fix quality, satellites, HDOP (NMEA parser and u-blox setup included) |
 | `wifi_manager` | saved network, setup page, captive portal, offline mode; the rover's identity and access code |
 | `ota_github` | version check, download, MD5 verify and flash; the shared GitHub client; config sync |
-| `github_log` | 5 Hz flash log, batched upload with retry and back-off |
+| `github_log` | serial JSON lines; 5 Hz flash log, batched upload with retry and back-off |
 | `path` | record, thin, save, load and follow (geometry and the path follower included) |
 | `remote` + `ui.h` | web server and the control/setup pages (the HTML lives in `ui.h`) |
 | `safety` | every failsafe as one function, the shared rover state, and the 100 Hz control task that applies them |
@@ -67,10 +87,11 @@ failsafe rules, version logic...), so it is unit-tested on a laptop; the part un
 1. **Wire it** per [docs/PINOUT.md](docs/PINOUT.md). It follows your running sketch, with **one wiring change**: the RR
    enable line moves from GPIO 21 (the IMU's I2C data pin) to GPIO 16. Remove the L298N EN jumpers and fit pull-downs on the 4 EN pins.
 2. **Build and flash by USB once** (Arduino IDE 2 or arduino-cli, ESP32 core 3.1.x, ArduinoJson 7). Board
-   "ESP32 Dev Module". The sketch folder carries its own `partitions.csv` (two OTA slots), which the IDE picks up
-   automatically. After this first flash, updates are over the air.
+   "ESP32 Dev Module". The sketch carries its own `partitions.csv` (two OTA slots), which the IDE picks up
+   automatically. Run `python tools/stage_sketch.py` first: it gathers the per-function folders into one Arduino sketch
+   folder, `build/stage/agri_rover/`, which is what you open in the IDE. After this first flash, updates are over the air.
    ```
-   python tools/build_firmware.py        # needs arduino-cli; prints the size and the image path
+   python tools/build_firmware.py        # needs arduino-cli; stages Software/ into one sketch, compiles, prints the size and the image path
    ```
    Or flash the one-file image `build/out/agri_rover.ino.merged.bin` (bootloader + partition table + app) at address 0:
    ```
@@ -188,7 +209,8 @@ measurements to take at each stage.
 
 ## Contributing
 
-* `./tools/test_host.sh` (or `tools\test_host.ps1` on Windows) runs the unit tests; no hardware needed.
+* `./tools/test_host.sh` (or `tools\test_host.ps1` on Windows) runs the unit tests of every function (`Software/*/Test`); no hardware needed.
+* `python tools/build_benches.py` compiles every bench sketch and refreshes each `Software/<Function>/Bin/*.bin`.
 * `python -m unittest tools.test_tools` runs the tooling tests.
 * **New team member?** Start with [docs/CONTRIBUTOR_GUIDE.md](docs/CONTRIBUTOR_GUIDE.md): laptop setup, first flash, daily workflow.
 * To release: `python tools/bump_version.py patch`, commit, push. See [docs/RELEASING.md](docs/RELEASING.md).

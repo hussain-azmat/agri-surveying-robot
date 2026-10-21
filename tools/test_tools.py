@@ -16,10 +16,12 @@ HEADER = "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,
 
 def make_repo(version="0.1.0", slot="0x180000"):
     root = Path(tempfile.mkdtemp())
-    fw = root / "firmware" / "agri_rover"
-    fw.mkdir(parents=True)
-    (fw / "config.h").write_text(f'#define FW_VERSION "{version}"\n')
-    (fw / "partitions.csv").write_text(f"nvs,data,nvs,0x9000,0x5000,\napp0,app,ota_0,0x10000,{slot},\n")
+    cfgdir = root / "Software" / "Common" / "Src"
+    cfgdir.mkdir(parents=True)
+    (cfgdir / "config.h").write_text(f'#define FW_VERSION "{version}"\n')
+    pdir = root / "Software" / "Rover" / "Src"
+    pdir.mkdir(parents=True)
+    (pdir / "partitions.csv").write_text(f"nvs,data,nvs,0x9000,0x5000,\napp0,app,ota_0,0x10000,{slot},\n")
     return root
 
 
@@ -52,7 +54,7 @@ class PublishOta(unittest.TestCase):
     def test_a_newer_version_is_published_numerically_not_alphabetically(self):
         root = make_repo("0.9.0")
         publish_ota.run(root, make_bin(root, byte=0x11))
-        (root / "firmware" / "agri_rover" / "config.h").write_text('#define FW_VERSION "0.10.0"\n')
+        (root / "Software" / "Common" / "Src" / "config.h").write_text('#define FW_VERSION "0.10.0"\n')
         code, published = publish_ota.run(root, make_bin(root, byte=0x22))
         self.assertEqual((code, published), (0, True))  # "0.10.0" < "0.9.0" as strings, > as versions
         self.assertEqual(publish_ota.read_manifest(root / "ota" / "version.txt")["version"], "0.10.0")
@@ -60,7 +62,7 @@ class PublishOta(unittest.TestCase):
     def test_going_backwards_is_an_error(self):
         root = make_repo("0.5.0")
         publish_ota.run(root, make_bin(root))
-        (root / "firmware" / "agri_rover" / "config.h").write_text('#define FW_VERSION "0.4.0"\n')
+        (root / "Software" / "Common" / "Src" / "config.h").write_text('#define FW_VERSION "0.4.0"\n')
         code, published = publish_ota.run(root, make_bin(root, byte=0x33))
         self.assertEqual((code, published), (1, False))
 
@@ -176,7 +178,7 @@ class ConsolidateLogs(unittest.TestCase):
 class PinChecks(unittest.TestCase):
     """The compile-time pin checks in config.h must catch real wiring mistakes."""
 
-    CONFIG = Path(__file__).resolve().parent.parent / "firmware" / "agri_rover" / "config.h"
+    CONFIG = Path(__file__).resolve().parent.parent / "Software" / "Common" / "Src" / "config.h"
 
     def compiles(self, mutate=None):
         import shutil

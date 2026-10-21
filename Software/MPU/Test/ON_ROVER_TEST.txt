@@ -1,0 +1,17 @@
+MPU on-rover test   (flash Bin/mpu.bin or build the mpu bench; serial monitor 115200)
+Record the result and the date. Wheels off the ground, rover flat and still unless a step says otherwise.
+
+[ ] 1  Power up. The first lines name the I2C pins (SDA=GPIO21 SCL=GPIO22 by default) and either
+       "MPU6050 Initialized Successfully" or a diagnosis (nothing answers / SDA and SCL swapped / another address).
+       PASS: "Initialized Successfully" on the pins you actually wired. If you wired other pins, change PIN_I2C_SDA /
+       PIN_I2C_SCL in Software/Common/Src/config.h (the build refuses a pin that another function already uses).
+[ ] 2  Within about 5 s: {"mpu":{"ok":true,"calibrated":true ...}}.                              PASS = both true
+[ ] 3  Flat and still: accel_z about 9.8 (9.5 - 10.1), accel_x and accel_y within 0.3, gyro_x/y/z within 0.05 rad/s,
+       tilt under 2 degrees.                                                                    PASS = all within range
+[ ] 4  Tilt the front up: pitch changes and tilt grows. Tilt the right side down: roll changes. Put it back: they return.
+       PASS = the right axis moves, in a consistent direction (write down which direction is positive)
+[ ] 5  gyro_noise_dps with everything still: under 0.5.                                        value: ______
+[ ] 6  (Full firmware, motors running at 50% and 100%, wheels off the ground) gyro_noise_dps does not rise sharply and the
+       status never shows "IMU missing". If it does: shorten / twist the I2C wires, separate them from the motor leads, add a
+       100 nF capacitor at the sensor.
+Fail on 1: check power (3.3 V), ground, the two wires, pull-ups, and the address (0x68, AD0 low).

@@ -47,8 +47,10 @@ cd agri-surveying-robot
 The repo is public, so cloning needs no login. **Logging in happens the first time you push** (Part 3); a browser window
 opens, you sign in to GitHub and approve. You do not create or paste any token yourself.
 
-Folder map (details in [README.md](../README.md)): the whole firmware is in `firmware/agri_rover/` (one `.ino` plus one
-`.h/.cpp` pair per job: motors, imu, gps, wifi_manager, ota_github, github_log, path, remote, safety, and `config.h`).
+Folder map (details in [README.md](../README.md) and [Software/Readme.txt](../Software/Readme.txt)): the code is in `Software/`,
+**one folder per function** (MPU, GPS, Motors, WiFi, OTA, Logging, Path, Remote, Safety, Common, Rover). Each has a `Readme.txt`,
+`Src/` (the code), `Bin/` (a compiled test image) and `Test/` (laptop unit tests and the on-rover checklist). Pins and limits are in
+`Software/Common/Src/config.h`.
 
 ---
 
@@ -81,8 +83,13 @@ Every push builds the firmware on GitHub and keeps the images for 30 days.
    (use exactly 3.1.3; the firmware is tested against it).
 3. *Tools → Manage Libraries* → search **ArduinoJson** (by Benoit Blanchon) → install version **7.4.2** (any 7.x works).
 
-**2.2 Open and configure**
-1. *File → Open* → `agri-surveying-robot\firmware\agri_rover\agri_rover.ino`. All the other files open as tabs.
+**2.2 Gather the sketch, open and configure**
+The Arduino IDE needs one folder per sketch, so first gather the per-function folders into one. In PowerShell, in the repo folder:
+```powershell
+python tools\stage_sketch.py
+```
+This creates `build\stage\agri_rover\` (a copy; **edit the files in `Software\`, never this copy**; it is rebuilt each time).
+1. *File → Open* → `agri-surveying-robot\build\stage\agri_rover\agri_rover.ino`. All the other files open as tabs.
 2. *Tools → Board → esp32 → **ESP32 Dev Module***.
 3. *Tools → Port* → the COM port of your board.
 4. Leave the other Tools options at their defaults. The folder's own `partitions.csv` (two 1.5 MB OTA slots) is used automatically.
@@ -137,9 +144,13 @@ git checkout main
 git pull                                    # always start from the latest
 git checkout -b my-change                   # your branch, any name
 ```
-1. **Edit** the code (Arduino IDE tabs, or any editor such as VS Code). Pins and limits live in `config.h`; one job per file.
-2. **Compile** in the IDE (the ✓ button) or run the laptop unit tests (needs a C++ compiler: skip this, CI runs them for you).
-3. **Test on the rover by USB**: IDE Upload as in Way B. This does not need a version bump.
+1. **Edit** the code in `Software/<Function>/Src/` (any editor, for example VS Code). Pins and limits live in
+   `Software/Common/Src/config.h`; one job per folder.
+2. **Compile**: run `python tools\stage_sketch.py` again to refresh `build\stage\agri_rover\`, then press the ✓ button in the
+   IDE on that sketch. (The laptop unit tests need a C++ compiler; skip them, CI runs them for you.)
+3. **Test on the rover by USB**: IDE Upload as in Way B. This does not need a version bump. To test ONE function on its own,
+   flash its bench (`Software/<Function>/Bin/<name>.bin`, or `python tools\stage_sketch.py mpu` and open
+   `build\stage\mpu\mpu.ino`); each function's `Readme.txt` and `Test\ON_ROVER_TEST.txt` say what to look for.
 4. **Commit and push your branch:**
    ```powershell
    git add -A

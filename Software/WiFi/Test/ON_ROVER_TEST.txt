@@ -1,0 +1,10 @@
+WiFi on-rover test   (flash Bin/wifi.bin or build the wifi bench; serial monitor 115200)
+The rover's MAC is in the first serial line. Its setup password is:  python tools/ap_password.py <MAC>
+
+[ ] 1  Fresh flash, no saved WiFi: a network "RoverSetup-xxxx" appears.                           PASS
+[ ] 2  Join it with the code from tools/ap_password.py. Open any web page: the setup page appears.   PASS
+[ ] 3  Pick your WiFi and enter a WRONG password: it reports failure and saves nothing (reboot: still no saved network).  PASS
+[ ] 4  Enter the RIGHT password: "connected and saved". Reboot: the serial line shows state ONLINE and an IP by itself.   PASS
+[ ] 5  Hold the setup button (GPIO 15 to GND) about 5 s while powering up: setup mode returns.             PASS
+[ ] 6  In setup mode do nothing for 4 minutes: the rover goes to OFFLINE; its own network stays up and the page still opens.   PASS
+[ ] 7  Nothing secret (WiFi password, token, access code) appears anywhere in the serial output.            PASS

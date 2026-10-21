@@ -1,0 +1,12 @@
+Motors on-rover test   (flash Bin/motors.bin or build the motors bench; serial monitor 115200)
+WHEELS OFF THE GROUND. Keys: 1 2 3 4 = FL FR RL RR forward 1 s at 40%, 5 6 7 8 = reverse, s = stop.
+
+[ ] 0  Before powering: L298N EN jumpers removed, 10 k pull-downs from the 4 EN pins to GND, RR enable wire on GPIO 16.
+[ ] 1  Press reset 10 times with the monitor open: no wheel twitches at any reset.                    PASS
+[ ] 2  Key 1 turns FL forward, 2 FR, 3 RL, 4 RR; each for about 1 s, then stops by itself.
+       PASS = the named wheel, forward.  Wrong wheel: fix the PIN_MOTOR_* lines in config.h.     FL __ FR __ RL __ RR __
+[ ] 3  Keys 5-8 turn the same wheels backward.   A wheel that is backwards: set it in WHEEL_INVERT (config.h) or swap that
+       motor's two wires.                                                                       FL __ FR __ RL __ RR __
+[ ] 4  Key s during a spin stops it at once.                                                    PASS
+[ ] 5  Lowest PWM at which each wheel really turns (compare with MOTOR_MIN_DUTY = 0.18 in config.h; change the value if
+       they turn only above it).                                                                FL __ FR __ RL __ RR __

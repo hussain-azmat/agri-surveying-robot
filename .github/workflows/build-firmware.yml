@@ -9,15 +9,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "firmware/**"
+      - "Software/**"
       - "tools/**"
-      - "test/**"
       - ".github/workflows/build-firmware.yml"
   pull_request:
     paths:
-      - "firmware/**"
+      - "Software/**"
       - "tools/**"
-      - "test/**"
   workflow_dispatch:
 
 permissions:
