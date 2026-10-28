@@ -10,8 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bump_version  # noqa: E402
 import consolidate_logs  # noqa: E402
 import publish_ota  # noqa: E402
+import ui_preview  # noqa: E402
 
-HEADER = "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pitch_deg,roll_deg"
+HEADER = "utc,uptime_ms,fix_n,fix_age_ms,gps_time,lat,lon,alt_m,fix,sats,hdop,speed_mps,course_deg,yaw_deg,pitch_deg,roll_deg,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,gyro_peak,drift_deg,straight_s,mode,throttle,turn,batt_v,xte_m,wp,event"
 
 
 def make_repo(version="0.1.0", slot="0x180000"):
@@ -128,7 +129,8 @@ class ConsolidateLogs(unittest.TestCase):
     def chunk(self, rover, day, name, rows, header=HEADER):
         d = self.root / rover / day
         d.mkdir(parents=True, exist_ok=True)
-        (d / name).write_text(header + "\n" + "\n".join(rows) + "\n")
+        lines = ([header] if header is not None else []) + list(rows)  # header=None: the rows already carry their own lines
+        (d / name).write_text("\n".join(lines) + "\n")
 
     def test_chunks_become_one_day_file_in_order_with_one_header(self):
         self.chunk("rover-A", "2026-10-01", "000001_001.csv", ["b1", "b2"])
@@ -161,6 +163,16 @@ class ConsolidateLogs(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertEqual((self.root / "rover-A" / "2026-10-01.csv").read_text().splitlines(), [HEADER, "a1"])
         self.assertTrue((self.root / "rover-A" / "2026-10-01" / "000002_000.csv").exists())
+
+    def test_metadata_lines_are_kept_once_and_the_header_appears_once(self):
+        meta = "# schema=2 fw=0.4.0 rover=rover-A"
+        self.chunk("rover-A", "2026-10-01", "000001_000.csv", [meta, HEADER, "a1", "a2"], header=None)
+        self.chunk("rover-A", "2026-10-01", "000001_001.csv", [meta, HEADER, "a3"], header=None)  # same file, 2nd chunk
+        self.chunk("rover-A", "2026-10-01", "000002_000.csv", ["# schema=2 fw=0.5.0 rover=rover-A", HEADER, "b1"], header=None)
+        merged, problems = consolidate_logs.consolidate(self.root, "2026-10-05")
+        self.assertEqual(problems, [])
+        text = (self.root / "rover-A" / "2026-10-01.csv").read_text().splitlines()
+        self.assertEqual(text, [meta, HEADER, "a1", "a2", "a3", "# schema=2 fw=0.5.0 rover=rover-A", "b1"])
 
     def test_rovers_are_kept_separate_and_unsynced_is_merged_too(self):
         self.chunk("rover-A", "2026-10-01", "000001_000.csv", ["a"])
@@ -214,6 +226,69 @@ class PinChecks(unittest.TestCase):
         self.assertFalse(ok)
         ok, _ = self.compiles(lambda t: t.replace("{13, 23, 4, 16}", "{13, 23, 4, 36}"))  # input-only
         self.assertFalse(ok)
+
+
+class ControlPage(unittest.TestCase):
+    """The control page lives in a C++ string, so the compiler cannot catch a mistake in it: check it here."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = ui_preview.extract_page("UI_CONTROL_HTML")
+
+    def test_page_is_self_contained_and_small(self):
+        self.assertLess(len(self.html), 48_000)  # it sits in the firmware image
+        import re
+        urls = re.findall(r"""(?:src|href)\s*=\s*["']https?://""", self.html)
+        self.assertEqual(urls, [], "the page must work with no internet: no external scripts or styles")
+        self.assertNotIn("innerHTML", self.html, "server text must only be inserted with textContent")
+
+    def test_every_control_the_script_uses_exists(self):
+        import re
+        ids = set(re.findall(r"""\bid=["']([A-Za-z0-9_-]+)["']""", self.html))
+        used = set(re.findall(r"""\$\('([A-Za-z0-9_-]+)'\)""", self.html))
+        self.assertEqual(sorted(used - ids), [], "the script refers to elements that are not in the page")
+
+    def test_remote_controls_are_present(self):
+        for needle in ("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", "Escape", "Space",
+                       'id="stop"', 'id="arm"', 'id="disarm"', 'id="spd"', "data-d=\"fl\"", "data-d=\"br\"", 'id="map"'):
+            self.assertIn(needle, self.html)
+
+    def test_javascript_is_syntactically_valid(self):
+        import re
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available")
+        js = re.search(r"<script>(.*?)</script>", self.html, re.S).group(1)
+        d = Path(tempfile.mkdtemp())
+        (d / "page.js").write_text(js, encoding="utf-8")
+        p = subprocess.run([node, "--check", str(d / "page.js")], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_setup_page_is_still_present(self):
+        self.assertIn("Rover WiFi setup", ui_preview.extract_page("UI_SETUP_HTML"))
+
+
+class SimulatedRover(unittest.TestCase):
+    """tools/ui_preview.py must speak the same API as remote.cpp, or the preview would mislead."""
+
+    def test_arm_drive_stop(self):
+        r = ui_preview.SimRover()
+        self.assertEqual(r.act("drive", {"t": "1", "s": "0"})["ok"], False)  # not armed: refused, as the firmware does
+        self.assertTrue(r.act("arm", {})["ok"])
+        r.act("drive", {"t": "0.5", "s": "-0.25"})
+        self.assertEqual((r.t, r.s), (0.5, -0.25))
+        self.assertEqual(r.status()["mode"], "MANUAL")
+        self.assertTrue(r.act("stop", {})["ok"])
+        s = r.status()
+        self.assertEqual((s["mode"], s["reason"]), ("DISARMED", "USER_STOP"))
+
+    def test_status_has_every_field_the_page_reads(self):
+        s = ui_preview.SimRover().status()
+        for k in ("id", "ver", "net", "ip", "host", "clock", "mode", "reason", "up", "heap", "cap", "rssi", "gps", "imu",
+                  "follow", "rec", "recN", "path", "log", "ota", "wheels"):
+            self.assertIn(k, s)
 
 
 if __name__ == "__main__":

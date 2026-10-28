@@ -15,10 +15,12 @@ Design source: *Agri Surveying Robot, Engineering Design Document V0.5* (hardwar
   about 0.5 s. Optionally records the path you drive (a point every 1.5 m or on a turn), saves it, uploads it to `paths/`.
 * **Auto mode**: loads `paths/<name>.csv` and follows it with a 4 m acceptance radius. Stops at the end, on GPS loss,
   when it leaves the path, when it stops making progress, or when the control page goes quiet.
-* **Logging**: 5 Hz rows (time, lat, lon, fix quality, satellites, HDOP, speed, course, yaw, mode, battery,
-  cross-track error, waypoint, event, and the IMU: raw accel x/y/z in m/s^2, raw gyro x/y/z in rad/s, pitch, roll)
-  to flash, uploaded to `logs/` in batches while stopped. Offline-safe. Columns: see `logHeader()` in `github_log.cpp`;
-  empty means "not available" (no fix, no IMU, no battery sensor, not in auto mode).
+* **Logging**: one row per GPS fix (5 per second by default) with 32 columns: GPS time, fix counter and age, position, speed,
+  course, heading, tilt, the IMU's accel and gyro AVERAGED between rows plus the gyro peak, the veer from a straight line,
+  the throttle and turn applied, battery, cross-track error, waypoint and events. A metadata line at the top of each file
+  records the firmware, rover and settings. Written to flash (while armed, or always with `log_always=on`) and uploaded to
+  `logs/` in batches while stopped. Offline-safe; rows lost to a busy writer are marked `GAP:n`. Details and every column:
+  [Software/Logging/Readme.txt](Software/Logging/Readme.txt). Empty means "not available", never 0.
 * **OTA updates**: bump the version, push, CI builds and publishes `ota/`. **At power-up, as soon as the rover is online,
   it checks for a newer version and installs it by itself** (then re-checks every 5 minutes while stopped). It verifies the
   MD5 first and stays disarmed afterwards. The control page also has **Check for update** and **Install update** buttons, and
@@ -210,6 +212,7 @@ measurements to take at each stage.
 ## Contributing
 
 * `./tools/test_host.sh` (or `tools\test_host.ps1` on Windows) runs the unit tests of every function (`Software/*/Test`); no hardware needed.
+* `python tools/ui_preview.py` serves the control page against a simulated rover (open http://localhost:8765): edit `Software/Remote/Src/ui.h`, reload, no hardware needed.
 * `python tools/build_benches.py` compiles every bench sketch and refreshes each `Software/<Function>/Bin/*.bin`.
 * `python -m unittest tools.test_tools` runs the tooling tests.
 * **New team member?** Start with [docs/CONTRIBUTOR_GUIDE.md](docs/CONTRIBUTOR_GUIDE.md): laptop setup, first flash, daily workflow.

@@ -225,7 +225,7 @@ RtConfigReport parseRtConfig(const char* text, RuntimeConfig* cfg) {
     }
 
     double v;
-    if (strcmp(key, "logging") == 0 || strcmp(key, "auto_update") == 0) {
+    if (strcmp(key, "logging") == 0 || strcmp(key, "auto_update") == 0 || strcmp(key, "log_always") == 0) {
       bool b;
       if (strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0 || strcasecmp(val, "on") == 0) b = true;
       else if (strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0 || strcasecmp(val, "off") == 0) b = false;
@@ -233,7 +233,8 @@ RtConfigReport parseRtConfig(const char* text, RuntimeConfig* cfg) {
         r.malformed++;
         continue;
       }
-      if (key[0] == 'l') cfg->loggingEnabled = b;
+      if (strcmp(key, "logging") == 0) cfg->loggingEnabled = b;
+      else if (strcmp(key, "log_always") == 0) cfg->logAlways = b;
       else cfg->autoUpdate = b;
       r.applied++;
       continue;
@@ -244,7 +245,7 @@ RtConfigReport parseRtConfig(const char* text, RuntimeConfig* cfg) {
       static const char* known[] = {"max_speed", "auto_speed", "accept_radius_m", "offpath_m", "cmd_timeout_ms",
                                     "link_timeout_ms", "hdop_max", "batt_low_v", "batt_crit_v", "path_spacing_m",
                                     "path_turn_deg", "upload_idle_s", "sync_interval_s", "ota_interval_s",
-                                    "turn_full_dps"};
+                                    "turn_full_dps", "log_every"};
       bool isKnown = false;
       for (const char* k : known) isKnown |= strcmp(k, key) == 0;
       if (isKnown) r.malformed++;
@@ -267,6 +268,7 @@ RtConfigReport parseRtConfig(const char* text, RuntimeConfig* cfg) {
     else if (!strcmp(key, "sync_interval_s")) cfg->syncIntervalS = clampCount<uint32_t>(v, 30, 3600, &r);
     else if (!strcmp(key, "ota_interval_s")) cfg->otaIntervalS = clampCount<uint32_t>(v, 60, 86400, &r);
     else if (!strcmp(key, "turn_full_dps")) cfg->turnFullDps = clampCount<float>(v, 20.0, 360.0, &r);
+    else if (!strcmp(key, "log_every")) cfg->logEvery = (uint8_t)clampCount<uint32_t>(v, 1, 50, &r);
     else {
       r.ignored++;
       continue;

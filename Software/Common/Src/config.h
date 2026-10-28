@@ -15,7 +15,7 @@
 // Bump this to release. CI (.github/workflows/build-firmware.yml) compiles the
 // sketch and publishes ota/version.txt + ota/firmware.bin when it is NEWER than
 // the version currently in ota/version.txt. Format: MAJOR.MINOR.PATCH
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.4.0"
 
 // ---- GitHub repo used for OTA, config, paths and logs (non-secret) ---------
 // Can be overridden at runtime from the setup page.
@@ -170,6 +170,8 @@ struct RuntimeConfig {
   uint32_t otaIntervalS = DEF_OTA_INTERVAL_S;    // 60 .. 86400
   float turnFullDps = 90.0f;                // 20 .. 360  yaw rate at turn = 1 (calibrate!)
   bool loggingEnabled = true;
+  uint8_t logEvery = 1;       // 1 .. 50: one log row for every Nth GPS fix (5 Hz GPS: 1 = 5 rows/s, 5 = 1 row/s)
+  bool logAlways = false;     // log from power-up, not only while armed (for GPS / IMU tests: uses flash faster)
   bool autoUpdate = true;  // install a newer firmware by itself when the rover is stopped and online
 };
 
@@ -192,7 +194,10 @@ constexpr uint32_t SETUP_BTN_HOLD_MS = 5000;          // brief: hold ~5 s at boo
 #define AP_PASSWORD_SALT "agri-rover-v1"
 
 // ---- Logging --------------------------------------------------------------------
-constexpr uint32_t LOG_PERIOD_MS = 200;               // 5 Hz
+// A log row is written for every Nth GPS fix (RuntimeConfig::logEvery), carrying the IMU readings AVERAGED over the
+// time since the previous row. If the GPS goes silent a row is still written this often, so a gap is visible.
+constexpr uint32_t LOG_HEARTBEAT_MS = 1000;
+constexpr size_t LOG_RING_SAMPLES = 64;               // rows queued between the control task and the flash writer
 constexpr size_t LOG_UPLOAD_CHUNK_BYTES = 16384;      // one GitHub commit per chunk; RAM-safe
 constexpr uint32_t LOG_FS_RESERVE_BYTES = 40960;      // stop logging when this little flash is left
 

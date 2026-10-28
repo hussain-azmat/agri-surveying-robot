@@ -95,34 +95,107 @@ size_t formatMessageJson(char* out, size_t cap, const char* status, const char* 
 }
 
 const char* logHeader() {
-  return "utc,uptime_ms,lat,lon,fix,sats,hdop,speed_mps,course_deg,yaw_deg,mode,batt_v,xte_m,wp,event,"
-         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pitch_deg,roll_deg\n";
+  return "utc,uptime_ms,fix_n,fix_age_ms,gps_time,lat,lon,alt_m,fix,sats,hdop,speed_mps,course_deg,yaw_deg,pitch_deg,roll_deg,"
+         "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,gyro_peak,drift_deg,straight_s,mode,throttle,turn,batt_v,xte_m,wp,event\n";
 }
 
-size_t formatLogRow(char* out, size_t cap, const char* utc, uint32_t uptimeMs, const char* mode, bool battKnown,
-                    float battV, bool autoMode, float xteM, int wp, const GpsData& g, const ImuData& i,
-                    const char* event) {
-  char batt[12] = "", xte[12] = "", wps[12] = "", lat[20] = "", lon[20] = "";
-  if (battKnown) snprintf(batt, sizeof(batt), "%.2f", fin(battV));
-  if (autoMode) {
-    snprintf(xte, sizeof(xte), "%.2f", fin(xteM));
-    snprintf(wps, sizeof(wps), "%d", wp);
+size_t formatLogPreamble(char* out, size_t cap, const char* fw, const char* rover, const RuntimeConfig& c) {
+  char r[40];  // the rover id comes from the chip, but never let a stray newline split the metadata line
+  size_t k = 0;
+  for (const char* s = rover ? rover : ""; *s && k < sizeof(r) - 1; s++) r[k++] = (*s == '\n' || *s == '\r' || *s == ',') ? '_' : *s;
+  r[k] = '\0';
+  const int n = snprintf(out, cap,
+                         "# schema=%d fw=%s rover=%s log_every=%u log_always=%u max_speed=%.2f auto_speed=%.2f accept_radius_m=%.1f turn_full_dps=%.0f\n",
+                         LOG_SCHEMA, fw ? fw : "", r, (unsigned)c.logEvery, c.logAlways ? 1u : 0u, fin(c.maxSpeed), fin(c.autoSpeed),
+                         fin(c.acceptRadiusM), fin(c.turnFullDps));
+  return finish(out, cap, n);
+}
+
+size_t formatUtc(char* out, size_t cap, int64_t sec, int32_t usec, char* dateOut) {
+  if (cap) out[0] = '\0';
+  if (dateOut) strcpy(dateOut, "00000000");
+  if (sec < 1704067200 || !cap) return 0;  // clock not set (before 2024-01-01)
+  // Civil-from-days (Howard Hinnant): no time.h, so it behaves the same on the ESP32 and on a laptop.
+  const int64_t z = sec / 86400 + 719468;
+  const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+  const unsigned doe = (unsigned)(z - era * 146097);
+  const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  const int64_t y = (int64_t)yoe + era * 400;
+  const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  const unsigned mp = (5 * doy + 2) / 153;
+  const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+  const unsigned m = mp < 10 ? mp + 3 : mp - 9;
+  const unsigned yy = (unsigned)((m <= 2 ? y + 1 : y) % 10000);
+  const unsigned rem = (unsigned)(sec % 86400);
+  const unsigned ms = (unsigned)((usec < 0 ? 0 : usec) / 1000) % 1000;
+  const int n = snprintf(out, cap, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", yy, m % 100, d % 100, (rem / 3600) % 100,
+                         (rem % 3600) / 60, rem % 60, ms);
+  if (dateOut) snprintf(dateOut, 9, "%04u%02u%02u", yy, m % 100, d % 100);
+  return finish(out, cap, n);
+}
+
+size_t logHeaderBlockLen(const char* text, size_t n) {
+  size_t i = 0;
+  while (i < n) {
+    size_t e = i;
+    while (e < n && text[e] != '\n') e++;
+    if (e >= n) return 0;  // the line is not complete yet
+    const bool comment = text[i] == '#';
+    i = e + 1;
+    if (!comment) return i;  // the header line: the block ends here
   }
+  return 0;
+}
+
+size_t formatLogRow(char* out, size_t cap, const LogSample& s) {
+  char utc[40];
+  formatUtc(utc, sizeof(utc), s.sec, s.usec, nullptr);
+  const GpsData& g = s.gps;
+  const ImuData& i = s.imu;
+  const ImuMeans& w = s.win;
+  char ageS[12] = "", gpsT[12] = "", lat[20] = "", lon[20] = "", alt[12] = "", crs[8] = "";
+  if (g.fixAgeMs != 0xFFFFFFFFu) snprintf(ageS, sizeof(ageS), "%lu", (unsigned long)g.fixAgeMs);
+  if (g.timeValid) snprintf(gpsT, sizeof(gpsT), "%02u:%02u:%02u", (unsigned)g.hour % 100, (unsigned)g.minute % 100, (unsigned)g.second % 100);
   if (g.fix) {
     snprintf(lat, sizeof(lat), "%.7f", fin(g.lat));
     snprintf(lon, sizeof(lon), "%.7f", fin(g.lon));
+    snprintf(alt, sizeof(alt), "%.1f", fin(g.altM));
   }
-  char imu[112];
+  if (g.courseValid) snprintf(crs, sizeof(crs), "%.0f", fin(g.courseDeg));
+  char yaw[12] = "", pitch[12] = "", roll[12] = "";
   if (i.ok) {
-    snprintf(imu, sizeof(imu), "%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.1f,%.1f", fin(i.accelX), fin(i.accelY), fin(i.accelZ),
-             fin(i.gyroX), fin(i.gyroY), fin(i.gyroZ), fin(i.pitchDeg), fin(i.rollDeg));
-  } else {
-    strcpy(imu, ",,,,,,,");  // eight empty fields: IMU not answering
+    snprintf(pitch, sizeof(pitch), "%.1f", fin(i.pitchDeg));
+    snprintf(roll, sizeof(roll), "%.1f", fin(i.rollDeg));
+    if (i.yawValid) snprintf(yaw, sizeof(yaw), "%.1f", fin(i.yawDeg));
   }
-  const int n = snprintf(out, cap, "%s,%lu,%s,%s,%u,%u,%.1f,%.2f,%.0f,%.1f,%s,%s,%s,%s,%s,%s\n", utc ? utc : "",
-                         (unsigned long)uptimeMs, lat, lon, (unsigned)g.quality, (unsigned)g.sats, fin(g.hdop),
-                         fin(g.speedMps), g.courseValid ? fin(g.courseDeg) : 0.0, i.yawValid ? fin(i.yawDeg) : 0.0,
-                         mode ? mode : "", batt, xte, wps, event ? event : "", imu);
+  char imu[96];
+  if (w.n) {
+    snprintf(imu, sizeof(imu), "%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f", fin(w.ax), fin(w.ay), fin(w.az), fin(w.gx), fin(w.gy),
+             fin(w.gz), fin(w.gyroPeak));
+  } else {
+    strcpy(imu, ",,,,,,");  // seven empty fields: the IMU gave no readings in this window
+  }
+  char drift[12] = "", straight[12] = "";
+  if (s.driftValid) {
+    snprintf(drift, sizeof(drift), "%.2f", fin(s.driftDeg));
+    snprintf(straight, sizeof(straight), "%.1f", fin(s.straightS));
+  }
+  static const char* const kMode[] = {"OFF", "MAN", "REC", "AUTO"};
+  const char* mode = kMode[(unsigned)s.mode < 4 ? (unsigned)s.mode : 0];
+  char batt[12] = "", xte[12] = "", wp[12] = "";
+  if (s.battKnown) snprintf(batt, sizeof(batt), "%.2f", fin(s.battV));
+  if (s.mode == LogMode::AUTO) {
+    snprintf(xte, sizeof(xte), "%.2f", fin(s.xteM));
+    snprintf(wp, sizeof(wp), "%d", s.wp);
+  }
+  char ev[sizeof(s.event)];
+  size_t k = 0;
+  for (const char* e = s.event; *e && k < sizeof(ev) - 1; e++) ev[k++] = (*e == ',' || *e == '\n' || *e == '\r') ? '_' : *e;
+  ev[k] = '\0';
+  const int n = snprintf(out, cap, "%s,%lu,%lu,%s,%s,%s,%s,%s,%u,%u,%.1f,%.2f,%s,%s,%s,%s,%s,%s,%s,%s,%.2f,%.2f,%s,%s,%s,%s\n", utc,
+                         (unsigned long)s.uptimeMs, (unsigned long)g.fixCount, ageS, gpsT, lat, lon, alt, (unsigned)g.quality,
+                         (unsigned)g.sats, fin(g.hdop), fin(g.speedMps), crs, yaw, pitch, roll, imu, drift, straight, mode,
+                         fin(s.throttle), fin(s.turn), batt, xte, wp, ev);
   if (n <= 0 || (size_t)n >= cap) {
     if (cap) out[0] = '\0';
     return 0;
@@ -142,7 +215,6 @@ size_t formatEventJson(char* out, size_t cap, const char* event, const char* det
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <sys/time.h>
-#include <time.h>
 #include "config.h"
 #include "ota_github.h"
 #include "wifi_manager.h"
@@ -159,12 +231,11 @@ uint32_t nvsGet(const char* key, uint32_t def) { return nvs().getUInt(key, def);
 void nvsPut(const char* key, uint32_t value) { nvs().putUInt(key, value); }
 
 
-char g_buf[2048];
+char g_buf[3072];
 size_t g_bufN = 0;
 File g_cur;
 bool g_curOpen = false;
 char g_curDate[9] = "00000000";  // YYYYMMDD of the first row in cur.csv, "00000000" if the clock was not set
-uint32_t g_lastRowMs = 0;
 uint32_t g_rows = 0;
 bool g_full = false;
 char g_err[96] = "";
@@ -172,6 +243,17 @@ uint32_t g_lastUploadMs = 0;
 uint32_t g_backoffMs = 0, g_nextTryMs = 0;
 uint32_t g_seq = 0;
 bool g_began = false;
+RuntimeConfig g_cfg;  // the last config the main loop saw: written into each file's metadata line
+
+// ---- samples queued by the control task --------------------------------------------------------------------
+SampleRing<LOG_RING_SAMPLES> g_ring;
+portMUX_TYPE g_ringMux = portMUX_INITIALIZER_UNLOCKED;
+uint32_t g_droppedTotal = 0;
+
+// ---- rate / space estimate -------------------------------------------------------------------------------------
+float g_rowBytesAvg = 170.0f;
+uint32_t g_rateStartMs = 0, g_rateRows = 0;
+float g_rowsPerS = 0;
 
 void setErr(const char* m) {
   strncpy(g_err, m, sizeof(g_err) - 1);
@@ -187,7 +269,12 @@ bool openCur() {
   g_cur = LittleFS.open("/log/cur.csv", FILE_APPEND);
   if (!g_cur) return false;
   g_curOpen = true;
-  if (g_cur.size() == 0) g_cur.print(logHeader());
+  if (g_cur.size() == 0) {  // a new file starts with its metadata line and its header
+    char pre[320];
+    const size_t n = formatLogPreamble(pre, sizeof(pre), FW_VERSION, roverId().c_str(), g_cfg);
+    if (n) g_cur.write((const uint8_t*)pre, n);
+    g_cur.print(logHeader());
+  }
   return true;
 }
 
@@ -208,14 +295,23 @@ void closeCur() {
   }
 }
 
+// Size of the metadata lines + header line at the start of a file (0 if the file has no complete header yet).
+size_t headerBlock(File& f, char* buf, size_t cap) {
+  f.seek(0);
+  const size_t got = f.read((uint8_t*)buf, cap);
+  return logHeaderBlockLen(buf, got);
+}
+
 // Moves cur.csv into the upload queue. Returns true if something was queued.
 bool rotate() {
   closeCur();
   File f = LittleFS.open("/log/cur.csv", "r");
   if (!f) return false;
   const size_t size = f.size();
+  char probe[768];
+  const size_t hb = headerBlock(f, probe, sizeof(probe));
   f.close();
-  if (size <= strlen(logHeader())) {  // header only: nothing worth uploading
+  if (size <= hb) {  // header only: nothing worth uploading
     LittleFS.remove("/log/cur.csv");
     return false;
   }
@@ -229,52 +325,33 @@ bool rotate() {
   return true;
 }
 
-// "2026-10-18T07:21:05.200Z" from the system clock; empty if the clock is not set.
-void utcNow(char* out, size_t cap, char* dateOut) {
-  struct timeval tv;
-  gettimeofday(&tv, nullptr);
-  if (tv.tv_sec < 1704067200) {
-    out[0] = '\0';
-    if (dateOut) strcpy(dateOut, "00000000");
-    return;
-  }
-  struct tm t;
-  gmtime_r(&tv.tv_sec, &t);
-  // Fields are range-limited so the output length is provably bounded (and the compiler can see it).
-  const unsigned y = (unsigned)(t.tm_year + 1900) % 10000, mo = (unsigned)(t.tm_mon + 1) % 100,
-                 d = (unsigned)t.tm_mday % 100, h = (unsigned)t.tm_hour % 100, mi = (unsigned)t.tm_min % 100,
-                 s = (unsigned)t.tm_sec % 100, ms = (unsigned)(tv.tv_usec / 1000) % 1000;
-  snprintf(out, cap, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", y, mo, d, h, mi, s, ms);
-  if (dateOut) {
-    char tmp[16];
-    snprintf(tmp, sizeof(tmp), "%04u%02u%02u", y, mo, d);
-    memcpy(dateOut, tmp, 8);
-    dateOut[8] = '\0';
-  }
-}
-
-void appendRow(const RoverState& s, const char* event) {
-  if (!g_began) return;
-  if (freeBytes() < LOG_FS_RESERVE_BYTES) {
+void appendSample(const LogSample& s, bool spaceOk) {
+  if (!spaceOk) {
     g_full = true;
     return;
   }
   g_full = false;
-
-  char utc[40];
   char date[9];
-  utcNow(utc, sizeof(utc), date);
+  char utc[40];
+  formatUtc(utc, sizeof(utc), s.sec, s.usec, date);
   if (strcmp(g_curDate, "00000000") == 0 && strcmp(date, "00000000") != 0) strcpy(g_curDate, date);
-
-  const char* mode = s.mode == Mode::AUTO ? "AUTO" : (s.mode == Mode::MANUAL ? (s.recording ? "REC" : "MAN") : "OFF");
-  char line[320];
-  const size_t n = formatLogRow(line, sizeof(line), utc, millis(), mode, s.battKnown, s.battV, s.mode == Mode::AUTO,
-                                s.follow.xteM, s.follow.wpIndex, s.gps, s.imu, event);
+  char line[420];
+  const size_t n = formatLogRow(line, sizeof(line), s);
   if (n == 0) return;
   if (g_bufN + n > sizeof(g_buf)) flushBuf();
   memcpy(g_buf + g_bufN, line, n);
   g_bufN += n;
   g_rows++;
+  g_rowBytesAvg += 0.05f * ((float)n - g_rowBytesAvg);
+  g_rateRows++;
+}
+
+bool ringPop(LogSample* out, uint32_t* dropped) {
+  portENTER_CRITICAL(&g_ringMux);
+  const bool ok = g_ring.pop(out);
+  *dropped = ok ? g_ring.takeDropped() : 0;
+  portEXIT_CRITICAL(&g_ringMux);
+  return ok;
 }
 
 // Oldest queued file name (they sort by their zero-padded sequence number), or "".
@@ -296,6 +373,25 @@ String oldestQueued(uint32_t* count, uint32_t* bytes) {
 
 bool isGood(int rc) { return rc == 200 || rc == 201 || rc == 422; }  // 422: that chunk already exists
 
+LogSample sampleFromState(const RoverState& s) {
+  LogSample x;
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  x.sec = tv.tv_sec;
+  x.usec = (int32_t)tv.tv_usec;
+  x.uptimeMs = millis();
+  x.gps = s.gps;
+  x.imu = s.imu;
+  x.mode = s.mode == Mode::AUTO ? LogMode::AUTO : (s.mode == Mode::MANUAL ? (s.recording ? LogMode::REC : LogMode::MAN) : LogMode::OFF);
+  x.throttle = s.cmdThrottle;
+  x.turn = s.cmdTurn;
+  x.battKnown = s.battKnown;
+  x.battV = s.battV;
+  x.xteM = s.follow.xteM;
+  x.wp = s.follow.wpIndex;
+  return x;
+}
+
 }  // namespace
 
 void logBegin() {
@@ -307,8 +403,18 @@ void logBegin() {
   // mid-write) is dropped at upload time, because only complete lines are ever sent.
   File f = LittleFS.open("/log/cur.csv", "r");
   if (f) {
-    f.readStringUntil('\n');            // header
-    const String first = f.readStringUntil('\n');  // first data row, to learn its date
+    String first, line;
+    bool headerSeen = false;
+    for (int k = 0; k < 8 && f.available(); k++) {  // skip the "# ..." lines and the header, take the first data row
+      line = f.readStringUntil('\n');
+      if (line.length() && line[0] == '#') continue;
+      if (!headerSeen) {
+        headerSeen = true;
+        continue;
+      }
+      first = line;
+      break;
+    }
     f.close();
     if (first.length() >= 10 && first[4] == '-' && first[7] == '-') {
       snprintf(g_curDate, sizeof(g_curDate), "%.4s%.2s%.2s", first.c_str(), first.c_str() + 5, first.c_str() + 8);
@@ -317,27 +423,65 @@ void logBegin() {
   }
 }
 
+void logPush(const LogSample& s) {
+  portENTER_CRITICAL(&g_ringMux);
+  g_ring.push(s);
+  portEXIT_CRITICAL(&g_ringMux);
+}
+
 void logTick(const RoverState& s) {
-  if (!g_began || s.mode == Mode::DISARMED || !s.cfg.loggingEnabled) return;
+  if (!g_began) return;
+  g_cfg = s.cfg;
   const uint32_t now = millis();
-  if (now - g_lastRowMs < LOG_PERIOD_MS) return;
-  g_lastRowMs = now;
-  appendRow(s, "");
-  // Write to flash about once a second; the buffer holds ~12 rows, so a power cut loses < 1 s.
+  // Write what the control task queued. A few dozen rows per call at most, so the main loop stays responsive.
+  LogSample x;
+  uint32_t dropped = 0;
+  static uint32_t lastSpaceCheck = 0;
+  static bool spaceOk = true;
+  if (now - lastSpaceCheck > 2000) {  // free space does not change fast; do not ask the filesystem for every row
+    lastSpaceCheck = now;
+    spaceOk = freeBytes() >= LOG_FS_RESERVE_BYTES;
+  }
+  for (int guard = 0; guard < 32 && ringPop(&x, &dropped); guard++) {
+    if (dropped) {  // the writer fell behind: say so in the data
+      g_droppedTotal += dropped;
+      LogSample gap = x;
+      gap.win = ImuMeans();
+      gap.driftValid = false;
+      snprintf(gap.event, sizeof(gap.event), "GAP:%lu", (unsigned long)dropped);
+      appendSample(gap, spaceOk);
+    }
+    appendSample(x, spaceOk);
+  }
+  // Write to flash about once a second; the buffer holds ~18 rows, so a power cut loses about a second.
   static uint32_t lastFlush = 0;
   if (now - lastFlush > 1000) {
     lastFlush = now;
     flushBuf();
   }
+  // rows per second over the last 10 s, for the "minutes of flash left" estimate
+  if (now - g_rateStartMs >= 10000) {
+    g_rowsPerS = g_rateRows * 1000.0f / (float)(now - g_rateStartMs);
+    g_rateStartMs = now;
+    g_rateRows = 0;
+  }
 }
 
 void logEvent(const RoverState& s, const char* event) {
   if (!g_began || !s.cfg.loggingEnabled) return;
-  appendRow(s, event);
-  flushBuf();
+  LogSample x = sampleFromState(s);
+  strncpy(x.event, event ? event : "", sizeof(x.event) - 1);
+  logPush(x);
 }
 
-void logFlush() { flushBuf(); }
+void logFlush() {
+  // A final drain, so a row queued just before a disarm is not left behind in RAM.
+  LogSample x;
+  uint32_t dropped = 0;
+  const bool spaceOk = freeBytes() >= LOG_FS_RESERVE_BYTES;
+  for (int guard = 0; guard < 64 && ringPop(&x, &dropped); guard++) appendSample(x, spaceOk);
+  flushBuf();
+}
 
 LogStatus logStatus() {
   LogStatus st;
@@ -355,7 +499,11 @@ LogStatus logStatus() {
   st.pendingBytes = bytes + curBytes;
   st.queuedFiles = count;
   st.rowsLogged = g_rows;
+  st.dropped = g_droppedTotal;
   st.full = g_full;
+  const uint32_t room = freeBytes();
+  const float bps = g_rowsPerS * g_rowBytesAvg;  // bytes per second being written right now
+  st.minutesLeft = (bps > 1.0f && room > LOG_FS_RESERVE_BYTES) ? (int32_t)((room - LOG_FS_RESERVE_BYTES) / bps / 60.0f) : -1;
   strncpy(st.lastError, g_err, sizeof(st.lastError) - 1);
   st.lastError[sizeof(st.lastError) - 1] = '\0';
   st.lastUploadAgoS = g_lastUploadMs ? (millis() - g_lastUploadMs) / 1000 : 0xFFFFFFFF;
@@ -402,12 +550,14 @@ void logService(bool online, bool idle) {
     nvsPut("lq_seq", 0xFFFFFFFF);
     return;
   }
-  // Every chunk after the first carries the file's OWN header line, so a file written by an older firmware (fewer
-  // columns) is never given the new header.
-  char hdr[256];
-  f.seek(0);
-  size_t hdrLen = f.readBytesUntil('\n', hdr, sizeof(hdr) - 2);
-  hdr[hdrLen++] = '\n';
+  // Every chunk after the first carries the file's OWN metadata and header lines, so a file written by an older
+  // firmware (other columns) is never given the new header, and every chunk stands alone.
+  char hdr[768];
+  size_t hdrLen = headerBlock(f, hdr, sizeof(hdr));
+  if (hdrLen == 0) {  // no complete header found: fall back to the current one
+    hdrLen = strlen(logHeader());
+    memcpy(hdr, logHeader(), hdrLen);
+  }
   f.seek(off);
 
   const size_t cap = LOG_UPLOAD_CHUNK_BYTES;

@@ -92,6 +92,10 @@ struct RoverState {
 
   FollowStatus follow;
   float wheel[W_COUNT] = {0, 0, 0, 0};  // speeds actually applied
+  // Veer from a straight line while moving with no turn commanded (see StraightMonitor in imu.h); + = to the right.
+  bool driftValid = false;
+  float driftDeg = 0;
+  float straightS = 0;
 
   bool recording = false;
   uint16_t recPoints = 0;

@@ -129,3 +129,18 @@ TEST(rt_config_survives_a_huge_or_binary_input) {
   CHECK(c.autoSpeed >= 0.1f && c.autoSpeed <= 0.8f);
   parseRtConfig(nullptr, &c);  // must not crash
 }
+
+TEST(rt_config_log_rate_and_log_always) {
+  RuntimeConfig c;
+  CHECK(c.logEvery == 1 && !c.logAlways);  // defaults: a row per fix, only while armed
+  parseRtConfig("log_every=5\nlog_always=on\n", &c);
+  CHECK(c.logEvery == 5 && c.logAlways);
+  RtConfigReport r = parseRtConfig("log_every=0\n", &c);
+  CHECK(c.logEvery == 1 && r.clamped == 1);  // clamped, never zero (that would mean "never log")
+  r = parseRtConfig("log_every=9999\n", &c);
+  CHECK(c.logEvery == 50 && r.clamped == 1);
+  r = parseRtConfig("log_always=maybe\n", &c);
+  CHECK(r.malformed == 1 && c.logAlways);  // junk leaves the setting alone
+  parseRtConfig("log_always=off\nlogging=off\n", &c);
+  CHECK(!c.logAlways && !c.loggingEnabled);  // the two switches are independent
+}

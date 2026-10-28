@@ -2,7 +2,8 @@ Remote on-rover test   (full firmware; first with the wheels OFF THE GROUND)
 
 [ ] 1  Join the rover's own network (or your shared network) and open the control page (http://rover-xxxxxx.local or the IP).   PASS
 [ ] 2  On a shared network the page asks for the access code (tools/ap_password.py <MAC>) and refuses a wrong one.            PASS
-[ ] 3  Arm (manual). The joystick moves the wheels; releasing it stops them.                                             PASS
+[ ] 3  Arm (manual). Holding a D-pad button (or an arrow key / W A S D) moves the wheels, and so do the four diagonals;
+       letting go stops them. The joystick mode works too. The speed slider changes how fast the wheels turn.   PASS
 [ ] 4  The big STOP button disarms and stops the wheels at once.                                                         PASS
 [ ] 5  Close the browser tab, or walk out of WiFi range, while a wheel is turning: the wheel stops within 0.5 s.       time: ______
 [ ] 6  System buttons: Check for update, Calibrate IMU (rover still), Spin wheel 1 s (disarmed only) all answer.         PASS

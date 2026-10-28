@@ -66,6 +66,10 @@ String statusJson() {
   d["mode"] = s.mode == Mode::MANUAL ? "MANUAL" : (s.mode == Mode::AUTO ? "AUTO" : "DISARMED");
   d["reason"] = s.stopReason;
   d["linkMs"] = (uint32_t)(millis() - s.lastCmdMs);
+  d["up"] = (uint32_t)(millis() / 1000);          // seconds since boot (control page, System card)
+  d["heap"] = (uint32_t)ESP.getFreeHeap();
+  d["cap"] = serialized(String(s.cfg.maxSpeed, 2));  // the rover's own manual speed cap (page sliders stay below it)
+  if (WiFi.status() == WL_CONNECTED) d["rssi"] = WiFi.RSSI();
 
   JsonObject g = d["gps"].to<JsonObject>();
   g["ok"] = s.gps.healthy;
@@ -90,6 +94,12 @@ String statusJson() {
   i["tilt"] = serialized(String(s.imu.tiltDeg, 0));
   i["noise"] = serialized(String(s.imu.gyroNoiseDps, 2));
 
+  // Veer from a straight line while moving with no turn commanded (+ = right); only meaningful when ok.
+  JsonObject dr = d["drift"].to<JsonObject>();
+  dr["ok"] = s.driftValid;
+  dr["deg"] = serialized(String(s.driftDeg, 2));
+  dr["s"] = serialized(String(s.straightS, 1));
+
   if (s.battKnown) d["batt"] = serialized(String(s.battV, 2));
 
   JsonObject f = d["follow"].to<JsonObject>();
@@ -110,6 +120,10 @@ String statusJson() {
   l["full"] = ls.full;
   l["err"] = ls.lastError;
   l["tok"] = ghTokenPresent();
+  l["mins"] = ls.minutesLeft;  // estimated minutes of flash left at the current logging rate; -1 = unknown
+  l["drop"] = ls.dropped;
+  l["every"] = s.cfg.logEvery;
+  l["always"] = s.cfg.logAlways;
 
   JsonObject o = d["ota"].to<JsonObject>();
   o["state"] = os.state;

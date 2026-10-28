@@ -174,6 +174,8 @@ SafetyInput stateSafetyInput(const RoverState& s, uint32_t nowMs) {
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <string.h>
+#include <sys/time.h>
+#include "github_log.h"
 #include "motors.h"
 
 RoverState g_state;
@@ -296,6 +298,10 @@ void controlTask(void*) {
   uint32_t prevUs = micros();
   FollowCmd fc;  // last follower command
   FollowStatus fs;
+  ImuWindow imuWin;            // raw IMU readings averaged between two log rows
+  StraightMonitor straight;    // veer from a straight line while no turn is commanded
+  bool logWasOn = false;
+  uint32_t fixesSinceRow = 0, lastRowMs = 0, lastGgaMs = 0;
 
   for (;;) {
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(CONTROL_PERIOD_MS));
@@ -316,6 +322,8 @@ void controlTask(void*) {
     float battV;
     readBattery(now, &battKnown, &battV);
     const bool newFix = (ev & NMEA_GGA) != 0;
+    if (newFix) lastGgaMs = now;
+    imuWin.add(im);
 
     // ---- 2. Publish sensors, take a consistent snapshot of commands and mode ----
     RoverState s;
@@ -372,8 +380,65 @@ void controlTask(void*) {
     }
     motorsUpdate(dt);
 
+    // ---- 6. Straight-line check and the log sample ----
+    // The commands that were actually applied: a turn the operator or the follower asked for is not "drift".
+    float appliedT = 0, appliedS = 0;
+    if (!so.disarm && so.allowMotion) {
+      if (s.mode == Mode::MANUAL) {
+        appliedT = s.cmdThrottle;
+        appliedS = s.cmdTurn;
+      } else if (s.mode == Mode::AUTO) {
+        appliedT = fc.throttle;
+        appliedS = fc.turn;
+      }
+    }
+    straight.update(dt, im.yawRateDps, appliedT, appliedS, im.ok);
+
+    // One row per GPS fix (or per Nth fix); if the GPS goes silent, one row a second so the gap shows in the data.
+    const bool logOn = s.cfg.loggingEnabled && (s.mode != Mode::DISARMED || s.cfg.logAlways);
+    if (logOn) {
+      if (!logWasOn) {  // logging just started: begin a fresh averaging window
+        imuWin.take();
+        fixesSinceRow = 0;
+        lastRowMs = now;
+      }
+      bool due = false;
+      if (newFix) due = ++fixesSinceRow >= s.cfg.logEvery;
+      else if (now - lastGgaMs >= LOG_HEARTBEAT_MS && now - lastRowMs >= LOG_HEARTBEAT_MS) due = true;
+      if (due) {
+        LogSample x;
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        x.sec = tv.tv_sec;
+        x.usec = (int32_t)tv.tv_usec;
+        x.uptimeMs = now;
+        x.gps = gp;
+        x.imu = im;
+        x.win = imuWin.take();
+        x.driftValid = straight.valid();
+        x.driftDeg = straight.driftDeg();
+        x.straightS = straight.straightS();
+        x.mode = s.mode == Mode::AUTO ? LogMode::AUTO : (s.mode == Mode::MANUAL ? (s.recording ? LogMode::REC : LogMode::MAN) : LogMode::OFF);
+        x.throttle = appliedT;
+        x.turn = appliedS;
+        x.battKnown = battKnown;
+        x.battV = battV;
+        x.xteM = fs.xteM;
+        x.wp = fs.wpIndex;
+        logPush(x);
+        fixesSinceRow = 0;
+        lastRowMs = now;
+      }
+    } else {
+      imuWin.take();  // nothing is being logged: do not let stale sums build up
+    }
+    logWasOn = logOn;
+
     {
       StateLock l;
+      g_state.driftValid = straight.valid();
+      g_state.driftDeg = straight.driftDeg();
+      g_state.straightS = straight.straightS();
       g_state.follow = fs;
       motorsGetApplied(g_state.wheel);
       g_state.recPoints = (uint16_t)pathRecCount();

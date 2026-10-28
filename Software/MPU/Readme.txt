@@ -37,4 +37,8 @@ PASS CRITERIA   (details in Test/ON_ROVER_TEST.txt)
 
 IN THE FULL FIRMWARE
   imu.cpp is called ONLY from the 100 Hz control task (one owner of the I2C bus). Its values appear in the serial JSON
-  {"imu":{...}}, on the control page, and in the log CSV (accel_*, gyro_*, pitch_deg, roll_deg, yaw_deg).
+  {"imu":{...}}, on the control page, and in the log CSV (yaw_deg, pitch_deg, roll_deg, the MEAN accel_* and gyro_* between
+  two rows, gyro_peak, drift_deg, straight_s).
+  imu.h also holds two plain-C++ helpers with laptop tests (Test/test_imu.cpp): ImuWindow averages the 100 Hz readings
+  between log rows, and StraightMonitor measures how far the rover veers from a straight line while no turn is commanded
+  (integrating the gyro yaw rate during a straight run; + = to the right). See Software/Logging/Readme.txt.

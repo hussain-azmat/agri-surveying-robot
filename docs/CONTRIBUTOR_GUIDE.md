@@ -100,7 +100,7 @@ The compile prints "Sketch uses ... bytes (83%)".
 
 ### 2.4 Check it works
 1. *Tools → Serial Monitor*, set the speed to **115200**, press the board's **EN/RST** button. You should see lines of JSON, for example:
-   - `{"status":"INFO","message":"agri rover firmware v0.3.0 starting"}`
+   - `{"status":"INFO","message":"agri rover firmware v0.4.0 starting"}`
    - the rover's id and **MAC address** (write it down)
    - the IMU pin check: `... answers on SDA=GPIO21 SCL=GPIO22` is good. A warning about *not found / swapped* means the IMU wires need
      checking: see "Confirm the IMU pins" in [PINOUT.md](PINOUT.md).
@@ -161,7 +161,7 @@ git checkout -b my-change                   # your branch, any name
 5. On GitHub, click **Compare & pull request**. Wait for the green check.
 6. **To release it to the rovers** (only after you tested it): bump the version, commit and push to the PR, then merge.
    ```powershell
-   python tools\bump_version.py patch      # 0.3.0 -> 0.3.1   (minor / major also work)
+   python tools\bump_version.py patch      # 0.4.0 -> 0.4.1   (minor / major also work)
    git add -A
    git commit -m "Release 0.3.1"
    git push

@@ -23,17 +23,23 @@ size_t formatMessageJson(char* out, size_t cap, const char* status, const char* 
 size_t formatEventJson(char* out, size_t cap, const char* event, const char* detail);
 
 // ---- Log rows (pure: unit-tested on a laptop) ----------------------------------------------------
-// The CSV header line, including its newline. New columns are only ever added at the END, so older columns keep their place.
-const char* logHeader();
-// One CSV row (with newline) into `out`; returns its length, or 0 if it did not fit. Empty fields mean "not available":
-// no position without a fix, no battery without a sensor, no xte/wp outside AUTO, no IMU values if the IMU is not answering.
-//   utc            may be "" if the clock is not set
-//   mode           "AUTO" / "REC" / "MAN" / "OFF"
-//   xteM, wp       only written when `autoMode`
-//   accel_*  m/s^2 and gyro_* rad/s are the raw readings (same as the serial {"imu":...} line), pitch/roll in degrees
-size_t formatLogRow(char* out, size_t cap, const char* utc, uint32_t uptimeMs, const char* mode, bool battKnown,
-                    float battV, bool autoMode, float xteM, int wp, const GpsData& g, const ImuData& i,
-                    const char* event);
+// File layout: optional "# ..." metadata lines, then ONE header line, then one row per GPS fix (or per Nth fix):
+//     # schema=2 fw=0.4.0 rover=rover-A1B2C3 log_every=1 log_always=0 max_speed=0.60 ...
+//     utc,uptime_ms,fix_n,fix_age_ms,gps_time,lat,lon,alt_m,fix,sats,hdop,speed_mps,course_deg,yaw_deg,...
+// Empty fields mean "not available" (never 0): no position without a fix, no IMU values if the IMU is not answering,
+// no xte / wp outside AUTO, no battery without a sensor, no drift outside a straight run.
+constexpr int LOG_SCHEMA = 2;
+#include "config.h"
+#include "log_sample.h"
+const char* logHeader();  // the column header line, including its newline
+// The "# schema=... fw=... rover=..." metadata line (with newline): what produced this file.
+size_t formatLogPreamble(char* out, size_t cap, const char* fw, const char* rover, const RuntimeConfig& cfg);
+// One CSV row (with newline); returns its length, or 0 if it did not fit (nothing half-written).
+size_t formatLogRow(char* out, size_t cap, const LogSample& s);
+// "2026-10-20T06:12:03.200Z"; empty if the clock was not set. `dateOut` (9 bytes) gets "20261020" or "00000000".
+size_t formatUtc(char* out, size_t cap, int64_t sec, int32_t usec, char* dateOut);
+// Bytes taken by the leading "# ..." lines plus the header line (0 if there is no complete header line yet).
+size_t logHeaderBlockLen(const char* text, size_t n);
 
 #ifdef ARDUINO
 #include <Arduino.h>
@@ -46,10 +52,9 @@ void serialEvent(const char* event, const char* detail);
 // Main loop, every iteration: prints the periodic {"imu":...} and {"gps":...} lines (SERIAL_TELEMETRY in config.h).
 void serialTelemetry(const RoverState& s);
 
-// Rover log: 5 Hz rows written to flash while armed, uploaded to GitHub in BATCHES when stopped.
-//
-// Rows (CSV): utc, uptime_ms, lat, lon, fix, sats, hdop, speed_mps, course_deg, yaw_deg, mode,
-//             batt_v, xte_m, wp, event, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, pitch_deg, roll_deg
+// Rover log: one row per GPS fix (see log_every in config/rover.cfg), written to flash while armed (or always, with
+// log_always), uploaded to GitHub in BATCHES when stopped. The control task (100 Hz) builds each row, averaging the IMU
+// between rows, and queues it with logPush(); the main loop formats and writes it, so a slow upload cannot lose rows.
 //
 //  * Rows go to /log/cur.csv in flash, buffered so flash is written about once a second, never per row.
 //  * When the rover has been stopped for a while (and is online) the data is queued and uploaded as
@@ -65,6 +70,8 @@ void serialTelemetry(const RoverState& s);
 
 
 struct LogStatus {
+  int32_t minutesLeft;     // estimated minutes of flash left at the current rate; -1 = unknown
+  uint32_t dropped;        // rows lost because the writer fell behind (each loss is marked GAP:n in the data)
   uint32_t pendingBytes;   // in flash, not yet uploaded
   uint32_t queuedFiles;
   uint32_t rowsLogged;     // since boot
@@ -74,7 +81,9 @@ struct LogStatus {
 };
 
 void logBegin();
-// Main loop, every iteration: writes a row at 5 Hz while armed. Cheap when nothing is due.
+// Control task: queue one sample (thread-safe, a few microseconds).
+void logPush(const LogSample& s);
+// Main loop, every iteration: writes the queued samples to flash. Cheap when nothing is waiting.
 void logTick(const RoverState& s);
 // Records a state change (e.g. "DISARM:LINK_LOST") as a row with the event column set.
 void logEvent(const RoverState& s, const char* event);
