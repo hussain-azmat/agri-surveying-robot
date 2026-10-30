@@ -5,15 +5,15 @@ import requests
 ROBOT_API_URL = "http://192.168.4.1/api/status"
 LOG_FILE_NAME = "robot_log.csv"
 
-# Software ke andar jitne bhi function folders hain unki list
+# Software folder ke andar mojood sub-folders ki sahi list
 FOLDERS = [
     "Common", "GPS", "Logging", "MPU", "Motors", 
     "OTA", "Path", "Remote", "Rover", "Safety", "WiFi"
 ]
 
 def main():
-    print("Starting multi-folder telemetry logger under Software/...")
-    print("Robot se data record ho kar sab folders mein save ho raha hai.")
+    print("Starting correct path telemetry logger...")
+    print("Robot se data record ho kar Software ke sub-folders mein save ho raha hai.")
 
     while True:
         try:
@@ -23,9 +23,10 @@ def main():
                 log_line = f"[LOG 1s]: {data['millis']},{data['armed']},{data['heading']},{data['battery']},{data['lat']},{data['lon']},{data['satellites']}"
                 print(log_line)
                 
-                # Sab folders ke andar robot_log.csv mein data save karein
+                # Software folder ke andar wale folders mein save karein
                 for folder in FOLDERS:
-                    folder_path = os.path.join(".", folder)
+                    # Rasta: Software/<FolderName>/robot_log.csv
+                    folder_path = os.path.join("Software", folder)
                     if os.path.isdir(folder_path):
                         file_path = os.path.join(folder_path, LOG_FILE_NAME)
                         with open(file_path, "a") as f:
